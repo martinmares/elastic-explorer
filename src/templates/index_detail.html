@@ -1,0 +1,199 @@
+<!-- Detail indexu s TABy -->
+{% if data.is_some() %}
+{% let d = data.as_ref().unwrap() %}
+
+<div class="card-body p-0">
+    <!-- Hlavička s názvem indexu -->
+    <div class="p-4 border-bottom">
+        <h3 class="mb-2">{{ d.index_name }}</h3>
+        <div class="d-flex gap-2 align-items-center">
+            {% if d.health == "green" %}
+            <span class="badge bg-success">{{ d.health }}</span>
+            {% else if d.health == "yellow" %}
+            <span class="badge bg-warning">{{ d.health }}</span>
+            {% else if d.health == "red" %}
+            <span class="badge bg-danger">{{ d.health }}</span>
+            {% else %}
+            <span class="badge bg-secondary">{{ d.health }}</span>
+            {% endif %}
+            <span class="badge bg-blue-lt">{{ d.status }}</span>
+            <span class="text-muted">UUID: {{ d.uuid }}</span>
+        </div>
+    </div>
+
+    <!-- TABy -->
+    <ul class="nav nav-tabs" data-bs-toggle="tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <a href="#tab-summary" class="nav-link active" data-bs-toggle="tab" aria-selected="true" role="tab">
+                <i class="ti ti-info-circle me-1"></i>
+                Summary
+            </a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a href="#tab-settings" class="nav-link" data-bs-toggle="tab" aria-selected="false" role="tab" tabindex="-1">
+                <i class="ti ti-settings me-1"></i>
+                Settings
+            </a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a href="#tab-mappings" class="nav-link" data-bs-toggle="tab" aria-selected="false" role="tab" tabindex="-1">
+                <i class="ti ti-map me-1"></i>
+                Mappings
+            </a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a href="#tab-stats" class="nav-link" data-bs-toggle="tab" aria-selected="false" role="tab" tabindex="-1">
+                <i class="ti ti-chart-bar me-1"></i>
+                Stats
+            </a>
+        </li>
+    </ul>
+
+    <!-- TAB Content -->
+    <div class="tab-content">
+        <!-- Summary TAB -->
+        <div class="tab-pane active show" id="tab-summary" role="tabpanel">
+            <div class="p-4">
+                <div class="row">
+                    <!-- Základní informace -->
+                    <div class="col-md-6 mb-4">
+                        <h4 class="mb-3">Základní informace</h4>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td class="text-muted">Health:</td>
+                                    <td>
+                                        {% if d.health == "green" %}
+                                        <span class="badge bg-success">{{ d.health }}</span>
+                                        {% else if d.health == "yellow" %}
+                                        <span class="badge bg-warning">{{ d.health }}</span>
+                                        {% else if d.health == "red" %}
+                                        <span class="badge bg-danger">{{ d.health }}</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ d.health }}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Status:</td>
+                                    <td><span class="badge bg-blue-lt">{{ d.status }}</span></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">UUID:</td>
+                                    <td><code class="small">{{ d.uuid }}</code></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Dokumenty:</td>
+                                    <td><strong>{{ d.docs_count_formatted() }}</strong></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Smazané dokumenty:</td>
+                                    <td>{{ d.docs_deleted_formatted() }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Primární shardy:</td>
+                                    <td><span class="badge bg-blue-lt">{{ d.pri }}</span></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Repliky:</td>
+                                    <td><span class="badge bg-cyan-lt">{{ d.rep }}</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Velikost a aliasy -->
+                    <div class="col-md-6 mb-4">
+                        <h4 class="mb-3">Velikost</h4>
+                        <table class="table table-sm mb-4">
+                            <tbody>
+                                <tr>
+                                    <td class="text-muted">Celková velikost:</td>
+                                    <td><strong>{{ d.store_size_formatted() }}</strong></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Primární shardy:</td>
+                                    <td>{{ d.pri_store_size_formatted() }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <!-- Aliasy -->
+                        {% if !d.aliases.is_empty() %}
+                        <h4 class="mb-3">Aliasy</h4>
+                        <div class="list-group list-group-flush">
+                            {% for alias in d.aliases.iter() %}
+                            <div class="list-group-item">
+                                <div class="d-flex align-items-center">
+                                    <i class="ti ti-arrow-forward text-muted me-2"></i>
+                                    <strong>{{ alias }}</strong>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info">
+                            <i class="ti ti-info-circle me-1"></i>
+                            Tento index nemá žádné aliasy
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings TAB -->
+        <div class="tab-pane" id="tab-settings" role="tabpanel">
+            <div class="p-4">
+                {% if d.settings.is_some() %}
+                <pre class="bg-dark text-white p-3 rounded"><code>{{ d.settings.as_ref().unwrap() }}</code></pre>
+                {% else %}
+                <div class="alert alert-warning">
+                    <i class="ti ti-alert-triangle me-1"></i>
+                    Settings nejsou k dispozici
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Mappings TAB -->
+        <div class="tab-pane" id="tab-mappings" role="tabpanel">
+            <div class="p-4">
+                {% if d.mappings.is_some() %}
+                <pre class="bg-dark text-white p-3 rounded"><code>{{ d.mappings.as_ref().unwrap() }}</code></pre>
+                {% else %}
+                <div class="alert alert-warning">
+                    <i class="ti ti-alert-triangle me-1"></i>
+                    Mappings nejsou k dispozici
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Stats TAB -->
+        <div class="tab-pane" id="tab-stats" role="tabpanel">
+            <div class="p-4">
+                {% if d.stats.is_some() %}
+                <pre class="bg-dark text-white p-3 rounded"><code>{{ d.stats.as_ref().unwrap() }}</code></pre>
+                {% else %}
+                <div class="alert alert-warning">
+                    <i class="ti ti-alert-triangle me-1"></i>
+                    Stats nejsou k dispozici
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="alert alert-danger m-4">
+    <h4 class="alert-title">
+        <i class="ti ti-alert-triangle"></i>
+        Nepodařilo se načíst detail indexu
+    </h4>
+    <div class="text-muted">
+        Zkontrolujte připojení k Elasticsearch nebo zkuste to znovu.
+    </div>
+</div>
+{% endif %}

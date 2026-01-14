@@ -1,0 +1,541 @@
+{% extends "base.html" %}
+
+{% block title %}Search - Elastic Explorer{% endblock %}
+
+{% block nav_search %}active{% endblock %}
+
+{% block page_title %}Search{% endblock %}
+
+{% block page_subtitle %}
+<div class="page-pretitle">Elasticsearch Query</div>
+{% endblock %}
+
+{% block content %}
+
+<script>
+// Pokud máme parametry v URL, automaticky submitni formulář přes HTMX
+document.addEventListener('DOMContentLoaded', function() {
+    const indexPattern = document.getElementById('search-index-pattern');
+    const query = document.getElementById('search-query');
+    const form = document.querySelector('form[hx-get]');
+
+    // Pokud jsou vyplněné inputy (z URL parametrů), spusť search
+    if (form && indexPattern && indexPattern.value && query && query.value) {
+        // Použij HTMX pro načtení výsledků
+        htmx.trigger(form, 'submit');
+    }
+});
+</script>
+
+<!-- Vyhledávací formulář -->
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="get" action="/search"
+                      hx-get="/search"
+                      hx-target="#search-results"
+                      hx-swap="innerHTML"
+                      hx-indicator="#search-spinner">
+                    <div class="row g-3">
+                        <div class="col-md-5">
+                            <label class="form-label">Index Pattern</label>
+                            <input type="text"
+                                   name="index_pattern"
+                                   id="search-index-pattern"
+                                   class="form-control"
+                                   placeholder="např. my-index-* nebo _all"
+                                   value="{% if data.is_some() %}{{ data.as_ref().unwrap().index_pattern }}{% endif %}"
+                                   required>
+                            <div class="form-hint">Použijte * jako wildcard, nebo _all pro všechny indexy</div>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label">Query</label>
+                            <input type="text"
+                                   name="query"
+                                   id="search-query"
+                                   class="form-control"
+                                   placeholder="např. field:value nebo text"
+                                   value="{% if data.is_some() %}{{ data.as_ref().unwrap().query }}{% endif %}"
+                                   required>
+                            <div class="form-hint">Elasticsearch query string syntax</div>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="ti ti-search me-1"></i>
+                                Hledat
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Výsledky wrapper s overlay spinnerem -->
+<div style="position: relative;">
+    <!-- Spinner jako overlay -->
+    <div id="search-spinner" class="htmx-indicator card" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <div class="text-center">
+            <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Načítám...</span>
+            </div>
+            <p class="text-muted mb-0">Vyhledávám dokumenty...</p>
+        </div>
+    </div>
+
+    <!-- Výsledky -->
+    <div id="search-results">
+{% if data.is_some() && data.as_ref().unwrap().total > 0 %}
+{% let d = data.as_ref().unwrap() %}
+
+<!-- Výsledky -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Výsledky</h3>
+                <div class="ms-auto text-muted">
+                    <strong>{{ d.total }}</strong> nalezeno v <strong>{{ d.took }}ms</strong>
+                </div>
+            </div>
+
+            {% if d.hits.is_empty() %}
+            <div class="card-body">
+                <div class="empty">
+                    <div class="empty-icon">
+                        <i class="ti ti-search-off"></i>
+                    </div>
+                    <p class="empty-title">Žádné výsledky</p>
+                    <p class="empty-subtitle text-muted">
+                        Zkuste změnit vyhledávací dotaz nebo index pattern
+                    </p>
+                </div>
+            </div>
+            {% else %}
+
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table table-striped">
+                    <thead>
+                        <tr>
+                            <th style="width: 200px;">Index</th>
+                            <th style="width: 250px;">Document ID</th>
+                            <th style="width: 80px;">Score</th>
+                            <th>Source</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for hit in d.hits.iter() %}
+                        <tr>
+                            <td>
+                                <span class="badge bg-blue-lt">{{ hit.index }}</span>
+                            </td>
+                            <td>
+                                <code class="small">{{ hit.id }}</code>
+                            </td>
+                            <td>
+                                {% if hit.score.is_some() %}
+                                <span class="text-muted">{{ hit.score.unwrap() }}</span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <details>
+                                    <summary class="cursor-pointer text-primary">
+                                        <i class="ti ti-code"></i> Zobrazit JSON
+                                    </summary>
+                                    <pre class="bg-dark text-white p-3 rounded mt-2 mb-0"><code>{{ hit.source }}</code></pre>
+                                </details>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if d.total_pages > 1 %}
+            <div class="card-footer d-flex align-items-center">
+                <p class="m-0 text-muted">
+                    Zobrazeno {{ d.showing_from() }} - {{ d.showing_to() }} z {{ d.total }}
+                </p>
+                <ul class="pagination m-0 ms-auto">
+                    {% if d.page > 1 %}
+                    <li class="page-item">
+                        <a class="page-link" href="/search?index_pattern={{ d.index_pattern }}&query={{ d.query }}&page={{ d.page - 1 }}&per_page={{ d.per_page }}">
+                            <i class="ti ti-chevron-left"></i> Předchozí
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    {% for page_num in 1..=d.total_pages %}
+                    {% if page_num == d.page %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ page_num }}</span>
+                    </li>
+                    {% else if page_num == 1 || page_num == d.total_pages || (d.page > 2 && page_num >= d.page - 2 && page_num <= d.page + 2) || (d.page <= 2 && page_num <= 4) %}
+                    <li class="page-item">
+                        <a class="page-link" href="/search?index_pattern={{ d.index_pattern }}&query={{ d.query }}&page={{ page_num }}&per_page={{ d.per_page }}">
+                            {{ page_num }}
+                        </a>
+                    </li>
+                    {% else if (d.page > 3 && page_num == d.page - 3) || page_num == d.page + 3 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
+
+                    {% if d.page < d.total_pages %}
+                    <li class="page-item">
+                        <a class="page-link" href="/search?index_pattern={{ d.index_pattern }}&query={{ d.query }}&page={{ d.page + 1 }}&per_page={{ d.per_page }}">
+                            Další <i class="ti ti-chevron-right"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% else %}
+
+<!-- Prázdný stav - žádný search ještě neproběhl -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="empty">
+                    <div class="empty-icon">
+                        <i class="ti ti-search"></i>
+                    </div>
+                    <p class="empty-title">Vyhledávání v Elasticsearch</p>
+                    <p class="empty-subtitle text-muted">
+                        Zadejte index pattern a query pro vyhledávání dokumentů
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+    </div>
+    <!-- End of search-results -->
+</div>
+<!-- End of wrapper with spinner -->
+
+<!-- Modal pro bulk delete dokumentů -->
+<div class="modal modal-blur fade" id="bulkDeleteModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bulk Delete Dokumentů</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="bulk-delete-phase-1">
+                    <div class="alert alert-danger">
+                        <h4 class="alert-title">
+                            <i class="ti ti-alert-triangle"></i>
+                            Pozor! Tato operace je nevratná
+                        </h4>
+                        <div class="text-muted">
+                            Chystáte se smazat <strong><span id="delete-count"></span> dokumentů</strong>.
+                            Tato akce nemůže být vrácena zpět.
+                        </div>
+                    </div>
+                    <div class="list-group" id="delete-documents-list" style="max-height: 300px; overflow-y: auto;"></div>
+                </div>
+
+                <div id="bulk-delete-phase-2" style="display: none;">
+                    <div class="progress mb-3">
+                        <div id="bulk-delete-progress" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div id="bulk-delete-results" style="max-height: 400px; overflow-y: auto;"></div>
+                </div>
+
+                <div id="bulk-delete-phase-3" style="display: none;">
+                    <div class="alert alert-success">
+                        <h4 class="alert-title">Operace dokončena</h4>
+                        <div class="text-muted">
+                            <strong id="delete-success-count"></strong> úspěšných,
+                            <strong id="delete-fail-count"></strong> chybných
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div id="bulk-delete-footer-1">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušit</button>
+                    <button type="button" class="btn btn-danger" onclick="executeBulkDeleteDocuments()">
+                        <i class="ti ti-trash"></i> Smazat vybrané dokumenty
+                    </button>
+                </div>
+                <div id="bulk-delete-footer-2" style="display: none;">
+                    <button type="button" class="btn btn-secondary" disabled>Probíhá mazání...</button>
+                </div>
+                <div id="bulk-delete-footer-3" style="display: none;">
+                    <button type="button" class="btn btn-primary" onclick="completeBulkDeleteDocuments()">Dokončit</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal pro detail dokumentu -->
+<div class="modal modal-blur fade" id="documentDetailModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Document Detail</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Index:</label>
+                    <span id="doc-index" class="ms-2"></span>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Document ID:</label>
+                    <code id="doc-id" class="ms-2"></code>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label fw-bold mb-0">Source JSON:</label>
+                        <button class="btn btn-sm btn-primary" onclick="copyJsonToClipboard()">
+                            <i class="ti ti-copy me-1"></i>
+                            Copy to clipboard
+                        </button>
+                    </div>
+                    <pre id="doc-source" class="bg-dark text-white p-3 rounded" style="max-height: 500px; overflow-y: auto;"><code></code></pre>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zavřít</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentDocumentJson = '';
+
+// === Bulk operations pro dokumenty ===
+
+function toggleSelectAllDocuments(checkbox) {
+    const checkboxes = document.querySelectorAll('.document-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    updateBulkActionsDocuments();
+}
+
+function updateBulkActionsDocuments() {
+    const checkboxes = document.querySelectorAll('.document-checkbox:checked');
+    const count = checkboxes.length;
+    const toolbar = document.getElementById('bulk-actions-toolbar-search');
+    const countSpan = document.getElementById('selected-count-search');
+
+    if (count > 0) {
+        toolbar.style.display = 'block';
+        countSpan.textContent = count + ' vybráno';
+    } else {
+        toolbar.style.display = 'none';
+    }
+
+    // Aktualizuj select-all checkbox
+    const allCheckboxes = document.querySelectorAll('.document-checkbox');
+    const selectAllCheckbox = document.getElementById('select-all-documents');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = allCheckboxes.length > 0 && count === allCheckboxes.length;
+    }
+}
+
+function clearDocumentSelection() {
+    const checkboxes = document.querySelectorAll('.document-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = false;
+    });
+    const selectAllCheckbox = document.getElementById('select-all-documents');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+    }
+    updateBulkActionsDocuments();
+}
+
+function getSelectedDocuments() {
+    const checkboxes = document.querySelectorAll('.document-checkbox:checked');
+    return Array.from(checkboxes).map(cb => ({
+        index: cb.dataset.index,
+        id: cb.dataset.id
+    }));
+}
+
+function confirmBulkDeleteDocuments() {
+    const selected = getSelectedDocuments();
+    if (selected.length === 0) return;
+
+    // Reset modal do phase 1
+    document.getElementById('bulk-delete-phase-1').style.display = 'block';
+    document.getElementById('bulk-delete-phase-2').style.display = 'none';
+    document.getElementById('bulk-delete-phase-3').style.display = 'none';
+    document.getElementById('bulk-delete-footer-1').style.display = 'block';
+    document.getElementById('bulk-delete-footer-2').style.display = 'none';
+    document.getElementById('bulk-delete-footer-3').style.display = 'none';
+
+    // Vyplň seznam dokumentů
+    document.getElementById('delete-count').textContent = selected.length;
+    const list = document.getElementById('delete-documents-list');
+    list.innerHTML = selected.map(doc => `
+        <div class="list-group-item">
+            <span class="badge bg-blue-lt">${doc.index}</span>
+            <code class="ms-2">${doc.id}</code>
+        </div>
+    `).join('');
+
+    // Otevři modal
+    const modal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
+    modal.show();
+}
+
+async function executeBulkDeleteDocuments() {
+    const selected = getSelectedDocuments();
+    if (selected.length === 0) return;
+
+    // Přepni do phase 2
+    document.getElementById('bulk-delete-phase-1').style.display = 'none';
+    document.getElementById('bulk-delete-phase-2').style.display = 'block';
+    document.getElementById('bulk-delete-footer-1').style.display = 'none';
+    document.getElementById('bulk-delete-footer-2').style.display = 'block';
+
+    const resultsDiv = document.getElementById('bulk-delete-results');
+    const progressBar = document.getElementById('bulk-delete-progress');
+    resultsDiv.innerHTML = '';
+
+    // Zavolej backend
+    try {
+        const response = await fetch('/search/bulk/delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                documents: selected
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Bulk delete failed');
+        }
+
+        const results = await response.json();
+
+        // Zobraz výsledky
+        let successCount = 0;
+        let failCount = 0;
+
+        results.forEach((result, index) => {
+            const percent = ((index + 1) / results.length) * 100;
+            progressBar.style.width = percent + '%';
+
+            const icon = result.success ?
+                '<i class="ti ti-check text-success"></i>' :
+                '<i class="ti ti-x text-danger"></i>';
+
+            const item = document.createElement('div');
+            item.className = 'list-group-item';
+            item.innerHTML = `
+                ${icon}
+                <span class="badge bg-blue-lt ms-2">${result.document.index}</span>
+                <code class="ms-2">${result.document.id}</code>
+                <span class="text-muted ms-2">${result.message}</span>
+            `;
+            resultsDiv.insertBefore(item, resultsDiv.firstChild);
+
+            if (result.success) successCount++;
+            else failCount++;
+        });
+
+        // Přepni do phase 3
+        document.getElementById('bulk-delete-phase-2').style.display = 'none';
+        document.getElementById('bulk-delete-phase-3').style.display = 'block';
+        document.getElementById('bulk-delete-footer-2').style.display = 'none';
+        document.getElementById('bulk-delete-footer-3').style.display = 'block';
+        document.getElementById('delete-success-count').textContent = successCount;
+        document.getElementById('delete-fail-count').textContent = failCount;
+
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Chyba při mazání dokumentů: ' + error.message);
+    }
+}
+
+function completeBulkDeleteDocuments() {
+    // Zavři modal a reload stránku
+    const modal = bootstrap.Modal.getInstance(document.getElementById('bulkDeleteModal'));
+    modal.hide();
+
+    // Počkej na zavření modalu a pak reload
+    setTimeout(() => {
+        // Reload search results
+        const form = document.querySelector('form[hx-get]');
+        if (form) {
+            htmx.trigger(form, 'submit');
+        }
+        clearDocumentSelection();
+    }, 300);
+}
+
+function bulkExportDocuments() {
+    const selected = getSelectedDocuments();
+    if (selected.length === 0) return;
+
+    // TODO: Implementovat export do ZIP
+    alert(`Export do ZIP bude implementován v dalším kroku. Vybrané dokumenty: ${selected.length}`);
+}
+
+// === Document detail modal ===
+
+function openDocumentDetail(index, id, source) {
+    // Uložíme JSON pro copy to clipboard
+    currentDocumentJson = JSON.stringify(source, null, 2);
+
+    // Vyplníme modal
+    document.getElementById('doc-index').textContent = index;
+    document.getElementById('doc-id').textContent = id;
+    document.getElementById('doc-source').querySelector('code').textContent = currentDocumentJson;
+
+    // Otevřeme modal
+    const modal = new bootstrap.Modal(document.getElementById('documentDetailModal'));
+    modal.show();
+}
+
+function copyJsonToClipboard() {
+    navigator.clipboard.writeText(currentDocumentJson).then(() => {
+        // Změň text tlačítka na chvíli
+        const btn = event.target.closest('button');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="ti ti-check me-1"></i>Zkopírováno!';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-success');
+
+        setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-primary');
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        alert('Nepodařilo se zkopírovat do schránky');
+    });
+}
+</script>
+
+{% endblock %}

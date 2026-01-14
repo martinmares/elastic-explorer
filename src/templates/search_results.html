@@ -1,0 +1,192 @@
+{% if data.is_some() %}
+{% let d = data.as_ref().unwrap() %}
+
+<!-- Výsledky -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Výsledky</h3>
+                <div class="ms-auto text-muted">
+                    <strong>{{ d.total }}</strong> nalezeno v <strong>{{ d.took }}ms</strong>
+                </div>
+            </div>
+
+            {% if d.total > 10000 %}
+            <div class="card-body">
+                <div class="alert alert-info mb-0">
+                    <i class="ti ti-info-circle me-1"></i>
+                    Nalezeno více než 10,000 výsledků. Zobrazeny jsou pouze první 10,000 dokumentů (500 stránek).
+                    Pro zobrazení dalších výsledků použijte specifičtější vyhledávací dotaz.
+                </div>
+            </div>
+            {% endif %}
+
+            {% if d.hits.is_empty() %}
+            <div class="card-body">
+                <div class="empty">
+                    <div class="empty-icon">
+                        <i class="ti ti-search-off"></i>
+                    </div>
+                    <p class="empty-title">Žádné výsledky</p>
+                    <p class="empty-subtitle text-muted">
+                        Zkuste změnit vyhledávací dotaz nebo index pattern
+                    </p>
+                </div>
+            </div>
+            {% else %}
+
+            <!-- Bulk actions toolbar -->
+            <div class="card-header" id="bulk-actions-toolbar-search" style="display: none;">
+                <div class="d-flex align-items-center">
+                    <span class="me-3" id="selected-count-search">0 vybráno</span>
+                    <div class="btn-list">
+                        <button class="btn btn-danger btn-sm" onclick="confirmBulkDeleteDocuments()" title="Smazat vybrané dokumenty">
+                            <i class="ti ti-trash"></i> Smazat
+                        </button>
+                        <button class="btn btn-primary btn-sm" onclick="bulkExportDocuments()" title="Exportovat vybrané dokumenty do ZIP">
+                            <i class="ti ti-download"></i> Export ZIP
+                        </button>
+                        <button class="btn btn-ghost-secondary btn-sm" onclick="clearDocumentSelection()" title="Zrušit výběr">
+                            <i class="ti ti-x"></i> Zrušit výběr
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table table-striped">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;">
+                                <input type="checkbox" id="select-all-documents" class="form-check-input" onchange="toggleSelectAllDocuments(this)">
+                            </th>
+                            <th style="width: 200px;">Index</th>
+                            <th style="width: 250px;">Document ID</th>
+                            <th style="width: 80px;">Score</th>
+                            <th>Source Preview</th>
+                            <th style="width: 80px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for hit in d.hits.iter() %}
+                        <tr>
+                            <td>
+                                <input type="checkbox" class="form-check-input document-checkbox"
+                                       value="{{ hit.index }}|{{ hit.id }}"
+                                       data-index="{{ hit.index }}"
+                                       data-id="{{ hit.id }}"
+                                       onchange="updateBulkActionsDocuments()">
+                            </td>
+                            <td>
+                                <span class="badge bg-blue-lt">{{ hit.index }}</span>
+                            </td>
+                            <td>
+                                <code class="small">{{ hit.id }}</code>
+                            </td>
+                            <td>
+                                {% if hit.score.is_some() %}
+                                <span class="text-muted">{{ hit.score.unwrap() }}</span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="text-muted small font-monospace">{{ hit.source_preview() }}</span>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-icon btn-ghost-primary"
+                                        onclick="openDocumentDetail('{{ hit.index }}', '{{ hit.id }}', {{ hit.source }})"
+                                        title="Zobrazit JSON detail">
+                                    <i class="ti ti-file-text"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if d.total_pages > 1 %}
+            <div class="card-footer d-flex align-items-center">
+                <p class="m-0 text-muted">
+                    Zobrazeno {{ d.showing_from() }} - {{ d.showing_to() }} z {{ d.total }}
+                </p>
+                <ul class="pagination m-0 ms-auto">
+                    {% if d.page > 1 %}
+                    <li class="page-item">
+                        <a class="page-link" href="/search?index_pattern={{ d.index_pattern }}&query={{ d.query }}&page={{ d.page - 1 }}&per_page={{ d.per_page }}"
+                           hx-get="/search?index_pattern={{ d.index_pattern }}&query={{ d.query }}&page={{ d.page - 1 }}&per_page={{ d.per_page }}"
+                           hx-target="#search-results"
+                           hx-swap="innerHTML"
+                           hx-indicator="#search-spinner">
+                            <i class="ti ti-chevron-left"></i> Předchozí
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    {% for page_num in 1..=d.total_pages %}
+                    {% if page_num == d.page %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ page_num }}</span>
+                    </li>
+                    {% else if page_num == 1 || page_num == d.total_pages || (d.page > 2 && page_num >= d.page - 2 && page_num <= d.page + 2) || (d.page <= 2 && page_num <= 4) %}
+                    <li class="page-item">
+                        <a class="page-link" href="/search?index_pattern={{ d.index_pattern }}&query={{ d.query }}&page={{ page_num }}&per_page={{ d.per_page }}"
+                           hx-get="/search?index_pattern={{ d.index_pattern }}&query={{ d.query }}&page={{ page_num }}&per_page={{ d.per_page }}"
+                           hx-target="#search-results"
+                           hx-swap="innerHTML"
+                           hx-indicator="#search-spinner">
+                            {{ page_num }}
+                        </a>
+                    </li>
+                    {% else if (d.page > 3 && page_num == d.page - 3) || page_num == d.page + 3 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
+
+                    {% if d.page < d.total_pages %}
+                    <li class="page-item">
+                        <a class="page-link" href="/search?index_pattern={{ d.index_pattern }}&query={{ d.query }}&page={{ d.page + 1 }}&per_page={{ d.per_page }}"
+                           hx-get="/search?index_pattern={{ d.index_pattern }}&query={{ d.query }}&page={{ d.page + 1 }}&per_page={{ d.per_page }}"
+                           hx-target="#search-results"
+                           hx-swap="innerHTML"
+                           hx-indicator="#search-spinner">
+                            Další <i class="ti ti-chevron-right"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% else %}
+
+<!-- Prázdný stav - žádný search ještě neproběhl -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="empty">
+                    <div class="empty-icon">
+                        <i class="ti ti-search"></i>
+                    </div>
+                    <p class="empty-title">Vyhledávání v Elasticsearch</p>
+                    <p class="empty-subtitle text-muted">
+                        Zadejte index pattern a query pro vyhledávání dokumentů
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}

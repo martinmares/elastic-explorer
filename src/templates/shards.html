@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+
+{% block title %}Shards - Elastic Explorer{% endblock %}
+
+{% block nav_shards %}active{% endblock %}
+
+{% block page_title %}Shards{% endblock %}
+
+{% block page_subtitle %}
+<div class="page-pretitle">Shard Allocation</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Filter pro index pattern -->
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="get" action="/shards" class="row g-3">
+                    <div class="col-md-10">
+                        <label class="form-label">Index Pattern</label>
+                        <input type="text"
+                               name="pattern"
+                               class="form-control"
+                               placeholder="např. my-index-* nebo _all"
+                               value="{{ pattern }}"
+                               required>
+                        <div class="form-hint">Použijte * jako wildcard pro filtrování indexů</div>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="ti ti-filter me-1"></i>
+                            Filtrovat
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if data.is_some() %}
+{% let d = data.as_ref().unwrap() %}
+
+<!-- Statistiky -->
+<div class="row mb-3">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="subheader">Celkem shardů</div>
+                    <div class="ms-auto lh-1">
+                        <span class="badge bg-primary text-white">{{ d.stats.total }}</span>
+                    </div>
+                </div>
+                <div class="h1 mb-0">
+                    <span class="text-primary">{{ d.stats.primary }} P</span>
+                    <span class="text-muted mx-1">+</span>
+                    <span class="text-secondary">{{ d.stats.replica }} R</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="subheader">Started</div>
+                <div class="h1 mb-0 text-success">{{ d.stats.started }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="subheader">Relocating</div>
+                <div class="h1 mb-0 text-warning">{{ d.stats.relocating }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="subheader">Unassigned</div>
+                <div class="h1 mb-0 text-danger">{{ d.stats.unassigned }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="card">
+    <div class="card-header">
+        <ul class="nav nav-tabs card-header-tabs" data-bs-toggle="tabs">
+            <li class="nav-item">
+                <a href="#tab-map" class="nav-link active" data-bs-toggle="tab">
+                    <i class="ti ti-layout-grid me-1"></i>
+                    Rozložení shardů
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="#tab-list" class="nav-link" data-bs-toggle="tab">
+                    <i class="ti ti-list me-1"></i>
+                    Seznam shardů
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+        <div class="tab-content">
+            <!-- Tab 1: Mapa rozložení -->
+            <div class="tab-pane active show" id="tab-map">
+                {% if d.nodes.is_empty() %}
+                <div class="empty">
+                    <div class="empty-icon">
+                        <i class="ti ti-database-off"></i>
+                    </div>
+                    <p class="empty-title">Žádné shardy nenalezeny</p>
+                    <p class="empty-subtitle text-muted">
+                        Zkuste změnit index pattern
+                    </p>
+                </div>
+                {% else %}
+                <div class="row g-3">
+                    {% for node in d.nodes.iter() %}
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">
+                                    <i class="ti ti-server me-2"></i>
+                                    {{ node.node_name }}
+                                </h3>
+                                <div class="ms-auto">
+                                    <span class="badge bg-blue-lt">{{ node.shards.len() }} shardů</span>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="d-flex flex-wrap gap-2">
+                                    {% for shard in node.shards.iter() %}
+                                    <div class="shard-box p-2 rounded border cursor-pointer"
+                                         onclick="openShardDetail('{{ shard.index }}', '{{ shard.shard }}', '{{ shard.prirep }}')"
+                                         style="min-width: 150px; background-color: {{ d.generate_index_color(shard.index) }}20; border-color: {{ d.shard_state_color(shard.state) }};">
+                                        <div class="d-flex align-items-center justify-content-between mb-1">
+                                            <small class="fw-bold">{{ shard.index }}</small>
+                                            {% if shard.prirep == "p" %}
+                                            <span class="badge bg-primary text-white ms-2">
+                                                <i class="ti ti-circle-filled"></i> P
+                                            </span>
+                                            {% else %}
+                                            <span class="badge bg-secondary text-white ms-2">R</span>
+                                            {% endif %}
+                                        </div>
+                                        <div class="text-muted small">
+                                            Shard #{{ shard.shard }}
+                                        </div>
+                                        <div class="text-muted small">
+                                            {{ shard.docs }} docs, {{ shard.store }}
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Tab 2: Seznam shardů -->
+            <div class="tab-pane" id="tab-list">
+                {% if d.all_shards.is_empty() %}
+                <div class="empty">
+                    <div class="empty-icon">
+                        <i class="ti ti-database-off"></i>
+                    </div>
+                    <p class="empty-title">Žádné shardy nenalezeny</p>
+                </div>
+                {% else %}
+                <div class="table-responsive">
+                    <table class="table table-vcenter card-table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Index</th>
+                                <th>Shard</th>
+                                <th>Type</th>
+                                <th>State</th>
+                                <th>Docs</th>
+                                <th>Size</th>
+                                <th>Node</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for shard in d.all_shards.iter() %}
+                            <tr class="cursor-pointer" onclick="openShardDetail('{{ shard.index }}', '{{ shard.shard }}', '{{ shard.prirep }}')">
+                                <td>
+                                    {% let bg_color = d.generate_index_color(shard.index) %}
+                                    <span class="badge" style="background-color: {{ bg_color }}; color: {{ d.get_text_color(bg_color) }};">
+                                        {{ shard.index }}
+                                    </span>
+                                </td>
+                                <td><code>{{ shard.shard }}</code></td>
+                                <td>
+                                    {% if shard.prirep == "p" %}
+                                    <span class="badge bg-primary text-white">
+                                        <i class="ti ti-circle-filled"></i> Primary
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary text-white">Replica</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if shard.state == "STARTED" %}
+                                    <span class="badge bg-success text-white">{{ shard.state }}</span>
+                                    {% else if shard.state == "RELOCATING" %}
+                                    <span class="badge bg-warning text-white">{{ shard.state }}</span>
+                                    {% else if shard.state == "UNASSIGNED" %}
+                                    <span class="badge bg-danger text-white">{{ shard.state }}</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary text-white">{{ shard.state }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ shard.docs }}</td>
+                                <td>{{ shard.store }}</td>
+                                <td>{{ shard.node }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+
+<!-- Prázdný stav -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="empty">
+                    <div class="empty-icon">
+                        <i class="ti ti-database"></i>
+                    </div>
+                    <p class="empty-title">Zobrazení shardů</p>
+                    <p class="empty-subtitle text-muted">
+                        Zadejte index pattern pro zobrazení shardů
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+
+<!-- Modal pro detail shardu -->
+<div class="modal modal-blur fade" id="shardDetailModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Shard Detail</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Index:</label>
+                    <span id="shard-index" class="ms-2"></span>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Shard Number:</label>
+                    <code id="shard-number" class="ms-2"></code>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Type:</label>
+                    <span id="shard-type" class="ms-2"></span>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">State:</label>
+                    <span id="shard-state" class="ms-2"></span>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Documents:</label>
+                    <span id="shard-docs" class="ms-2"></span>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Size:</label>
+                    <span id="shard-size" class="ms-2"></span>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Node:</label>
+                    <span id="shard-node" class="ms-2"></span>
+                </div>
+                <div class="mb-3" id="shard-unassigned-reason-container" style="display: none;">
+                    <label class="form-label fw-bold">Unassigned Reason:</label>
+                    <span id="shard-unassigned-reason" class="ms-2 text-danger"></span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zavřít</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function openShardDetail(index, shard, prirep) {
+    {% if data.is_some() %}
+    {% let d = data.as_ref().unwrap() %}
+    const shards = {{ d.all_shards_json()|safe }};
+
+    // Najdi konkrétní shard
+    const shardData = shards.find(s =>
+        s.index === index &&
+        s.shard === shard &&
+        s.prirep === prirep
+    );
+
+    if (!shardData) {
+        alert('Shard nenalezen');
+        return;
+    }
+
+    // Naplň modal daty
+    document.getElementById('shard-index').textContent = shardData.index;
+    document.getElementById('shard-number').textContent = shardData.shard;
+
+    const typeSpan = document.getElementById('shard-type');
+    if (shardData.prirep === 'p') {
+        typeSpan.innerHTML = '<span class="badge bg-primary text-white"><i class="ti ti-circle-filled"></i> Primary</span>';
+    } else {
+        typeSpan.innerHTML = '<span class="badge bg-secondary text-white">Replica</span>';
+    }
+
+    const stateSpan = document.getElementById('shard-state');
+    let stateBadgeClass = 'bg-secondary';
+    if (shardData.state === 'STARTED') stateBadgeClass = 'bg-success';
+    else if (shardData.state === 'RELOCATING') stateBadgeClass = 'bg-warning';
+    else if (shardData.state === 'UNASSIGNED') stateBadgeClass = 'bg-danger';
+    stateSpan.innerHTML = `<span class="badge text-white ${stateBadgeClass}">${shardData.state}</span>`;
+
+    document.getElementById('shard-docs').textContent = shardData.docs;
+    document.getElementById('shard-size').textContent = shardData.store;
+    document.getElementById('shard-node').textContent = shardData.node;
+
+    // Zobraz unassigned reason pokud existuje
+    const reasonContainer = document.getElementById('shard-unassigned-reason-container');
+    if (shardData.unassigned_reason) {
+        document.getElementById('shard-unassigned-reason').textContent = shardData.unassigned_reason;
+        reasonContainer.style.display = 'block';
+    } else {
+        reasonContainer.style.display = 'none';
+    }
+
+    // Otevři modal
+    const modal = new bootstrap.Modal(document.getElementById('shardDetailModal'));
+    modal.show();
+    {% else %}
+    alert('Data nejsou k dispozici');
+    {% endif %}
+}
+</script>
+
+{% endblock %}

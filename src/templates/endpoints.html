@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+
+{% block title %}Endpointy - Elastic Explorer{% endblock %}
+
+{% block nav_endpoints %}active{% endblock %}
+
+{% block page_title %}Elasticsearch Endpointy{% endblock %}
+
+{% block page_subtitle %}
+<div class="page-pretitle">Správa připojení</div>
+{% endblock %}
+
+{% block page_actions %}
+<div class="col-auto ms-auto d-print-none">
+    <div class="btn-list">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal-endpoint">
+            <i class="ti ti-plus"></i>
+            Přidat endpoint
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row row-cards">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Uložené endpointy</h3>
+            </div>
+            <div class="card-body" id="endpoints-list">
+                {% if endpoints.is_empty() %}
+                <div class="empty">
+                    <div class="empty-icon">
+                        <i class="ti ti-server-off"></i>
+                    </div>
+                    <p class="empty-title">Žádné endpointy</p>
+                    <p class="empty-subtitle text-muted">
+                        Začněte přidáním vašeho prvního Elasticsearch endpointu
+                    </p>
+                    <div class="empty-action">
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal-endpoint">
+                            <i class="ti ti-plus"></i>
+                            Přidat endpoint
+                        </button>
+                    </div>
+                </div>
+                {% else %}
+                <div class="list-group list-group-flush">
+                    {% for endpoint in endpoints %}
+                    <div class="list-group-item">
+                        <div class="row align-items-center">
+                            <div class="col-auto">
+                                <span class="avatar {% if ctx.active_endpoint.is_some() && ctx.active_endpoint.as_ref().unwrap().id == endpoint.id %}bg-green{% endif %}">
+                                    <i class="ti ti-server"></i>
+                                </span>
+                            </div>
+                            <div class="col" style="cursor: pointer;" onclick="document.getElementById('select-form-{{ endpoint.id }}').submit();">
+                                <div class="text-truncate">
+                                    <strong>{{ endpoint.name }}</strong>
+                                    {% if ctx.active_endpoint.is_some() && ctx.active_endpoint.as_ref().unwrap().id == endpoint.id %}
+                                    <span class="badge bg-green-lt ms-2">Aktivní</span>
+                                    {% endif %}
+                                </div>
+                                <div class="text-muted">
+                                    <code>{{ endpoint.url }}</code>
+                                    {% if endpoint.insecure %}
+                                    <span class="badge bg-yellow-lt ms-2">
+                                        <i class="ti ti-shield-off"></i> Insecure
+                                    </span>
+                                    {% endif %}
+                                    {% if endpoint.username.is_some() %}
+                                    <span class="badge bg-blue-lt ms-2">
+                                        <i class="ti ti-user"></i> {{ endpoint.username.as_ref().unwrap() }}
+                                    </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-auto">
+                                <!-- Hidden form pro výběr endpointu -->
+                                <form id="select-form-{{ endpoint.id }}" action="/endpoints/{{ endpoint.id }}/select" method="post" style="display: none;"></form>
+
+                                <!-- Tlačítka -->
+                                <div class="btn-list">
+                                    <button
+                                        class="btn btn-sm btn-icon btn-success"
+                                        onclick="event.stopPropagation(); testConnection(event, {{ endpoint.id }}, '{{ endpoint.name }}')"
+                                        title="Test připojení">
+                                        <i class="ti ti-plug-connected"></i>
+                                    </button>
+                                    <button
+                                        class="btn btn-sm btn-icon btn-ghost-secondary"
+                                        onclick="event.stopPropagation(); document.getElementById('select-form-{{ endpoint.id }}').submit();"
+                                        title="Použít tento endpoint">
+                                        <i class="ti ti-check"></i>
+                                    </button>
+                                    <button
+                                        class="btn btn-sm btn-icon btn-ghost-danger"
+                                        onclick="event.stopPropagation(); confirmDelete({{ endpoint.id }}, '{{ endpoint.name }}');"
+                                        title="Smazat">
+                                        <i class="ti ti-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal pro přidání/editaci endpointu -->
+<div class="modal modal-blur fade" id="modal-endpoint" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Přidat Elasticsearch endpoint</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form hx-post="/endpoints" hx-target="#endpoints-list" hx-swap="innerHTML">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label required">Název</label>
+                        <input type="text" class="form-control" name="name" placeholder="Production, Local Dev, ..." required>
+                        <small class="form-hint">Popisný název pro tento endpoint</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label required">URL</label>
+                        <input type="url" class="form-control" name="url" placeholder="https://elasticsearch.example.com:9200" required>
+                        <small class="form-hint">Kompletní URL včetně scheme a portu</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="insecure">
+                            <span class="form-check-label">Povolit self-signed certifikáty (insecure)</span>
+                        </label>
+                    </div>
+                    <hr>
+                    <h3 class="card-title">Basic Authentication</h3>
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" name="username" placeholder="elastic" autocomplete="username">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" name="password" placeholder="••••••••" autocomplete="current-password">
+                        <small class="form-hint">
+                            <i class="ti ti-lock"></i>
+                            Heslo bude uloženo bezpečně v OS keychain
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn" data-bs-dismiss="modal">Zrušit</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="ti ti-check"></i>
+                        Uložit endpoint
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal pro potvrzení smazání -->
+<div class="modal modal-blur fade" id="modal-delete" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-body">
+                <div class="modal-title">Opravdu smazat?</div>
+                <div>Opravdu chcete smazat endpoint <strong id="delete-endpoint-name"></strong>?</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" data-bs-dismiss="modal">Zrušit</button>
+                <button type="button" class="btn btn-danger" id="confirm-delete-btn">Ano, smazat</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let deleteEndpointId = null;
+
+    function confirmDelete(id, name) {
+        deleteEndpointId = id;
+        document.getElementById('delete-endpoint-name').textContent = name;
+        const modal = new bootstrap.Modal(document.getElementById('modal-delete'));
+        modal.show();
+    }
+
+    document.getElementById('confirm-delete-btn').addEventListener('click', function() {
+        if (deleteEndpointId) {
+            htmx.ajax('DELETE', `/endpoints/${deleteEndpointId}`, {
+                target: '#endpoints-list',
+                swap: 'innerHTML'
+            });
+            bootstrap.Modal.getInstance(document.getElementById('modal-delete')).hide();
+        }
+    });
+
+    // Po úspěšném přidání endpointu zavři modal a resetuj formulář
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'endpoints-list') {
+            const modalElement = document.getElementById('modal-endpoint');
+            const modal = bootstrap.Modal.getInstance(modalElement);
+            if (modal) {
+                modal.hide();
+            }
+
+            // Resetuj formulář
+            const form = modalElement.querySelector('form');
+            if (form) {
+                form.reset();
+            }
+
+            // Forcuj odstranění backdrop pokud zůstal
+            setTimeout(() => {
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                backdrops.forEach(backdrop => backdrop.remove());
+                document.body.classList.remove('modal-open');
+                document.body.style.overflow = '';
+                document.body.style.paddingRight = '';
+            }, 100);
+        }
+    });
+
+    // Test připojení
+    async function testConnection(evt, id, name) {
+        const btn = evt.target.closest('button');
+        const originalHtml = btn.innerHTML;
+
+        // Zobraz spinner
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+        try {
+            const response = await fetch(`/endpoints/${id}/test`, {
+                method: 'POST'
+            });
+
+            const result = await response.json();
+
+            // Zobraz výsledek jako toast - JEDNODUŠE
+            const toast = document.createElement('div');
+            const bgColor = result.success ? '#2fb344' : '#d63939';
+            toast.style = `
+                position: fixed;
+                top: 100px;
+                right: 20px;
+                z-index: 10000;
+                min-width: 320px;
+                max-width: 420px;
+                padding: 1rem;
+                background-color: ${bgColor};
+                color: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                opacity: 0;
+            `;
+            toast.innerHTML = `
+                <div style="display: flex; align-items: start;">
+                    <div style="margin-right: 12px; font-size: 24px;">
+                        ${result.success ? '✓' : '✗'}
+                    </div>
+                    <div style="flex: 1; color: white;">
+                        <h4 style="margin: 0 0 4px 0; font-size: 16px; font-weight: bold; color: white;">${name}</h4>
+                        <div style="color: rgba(255,255,255,0.9); font-size: 14px;">${result.message}</div>
+                        ${result.version ? `<div style="margin-top: 4px; font-size: 13px; color: rgba(255,255,255,0.8);"><strong>Verze:</strong> ${result.version}</div>` : ''}
+                    </div>
+                    <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer; margin-left: 8px;">&times;</button>
+                </div>
+            `;
+            document.body.appendChild(toast);
+
+            // Fade in animace
+            setTimeout(() => {
+                toast.style.opacity = '1';
+                toast.style.transition = 'opacity 0.3s ease-in';
+            }, 10);
+
+            // Auto-hide po 5 sekundách s fade out
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s ease-out';
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
+        } catch (error) {
+            alert('Chyba při testování připojení: ' + error.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    }
+</script>
+{% endblock %}
