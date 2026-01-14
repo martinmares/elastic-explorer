@@ -82,6 +82,7 @@ async fn main() -> Result<()> {
         .route("/shards", get(handlers::shards::shards_page))
         .route("/console", get(handlers::console::console_page))
         .route("/console/execute", post(handlers::console::execute_request))
+        .route("/console/history-table", get(handlers::console::console_history_table))
         .nest_service("/static", ServeDir::new("static"))
         .with_state(state);
 

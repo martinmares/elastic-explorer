@@ -59,6 +59,27 @@ pub struct ConsoleHistoryWithEndpoint {
     pub created_at: String, // Formatted datetime
 }
 
+impl ConsoleHistoryWithEndpoint {
+    pub fn body_preview(&self) -> String {
+        match &self.body {
+            Some(b) if b.len() > 50 => format!("{}...", &b[..50]),
+            Some(b) => b.clone(),
+            None => "-".to_string(),
+        }
+    }
+
+    pub fn body_escaped(&self) -> String {
+        // Escape pro použití v JavaScript stringu v onclick atributu
+        // Musíme escapovat: ' " \ a newlines
+        self.body.as_deref().unwrap_or("")
+            .replace('\\', "\\\\")  // Backslash first!
+            .replace('\'', "\\'")   // Single quote
+            .replace('"', "\\\"")   // Double quote
+            .replace('\n', "\\n")   // Newline
+            .replace('\r', "\\r")   // Carriage return
+    }
+}
+
 /// GET /console - Zobrazí Dev Console
 pub async fn console_page(
     State(state): State<Arc<AppState>>,
@@ -115,6 +136,84 @@ pub async fn console_page(
     template.render()
         .map(Html)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+/// GET /console/history-table - Vrátí pouze tabulku historie (pro HTMX reload)
+pub async fn console_history_table(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<ConsoleQuery>,
+) -> Result<Html<String>, (StatusCode, String)> {
+    // Načti historii (poslední 50 záznamů)
+    let history_records = state.db.get_console_history(50, query.endpoint_filter).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Získej všechny endpointy pro mapování ID -> name
+    let endpoints = state.db.get_endpoints().await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Převeď historii na format s endpoint_name
+    let history: Vec<ConsoleHistoryWithEndpoint> = history_records
+        .into_iter()
+        .map(|h| {
+            let endpoint_name = endpoints
+                .iter()
+                .find(|ep| ep.id == h.endpoint_id)
+                .map(|ep| ep.name.clone())
+                .unwrap_or_else(|| format!("Unknown ({})", h.endpoint_id));
+
+            ConsoleHistoryWithEndpoint {
+                id: h.id,
+                endpoint_id: h.endpoint_id,
+                endpoint_name,
+                method: h.method,
+                path: h.path,
+                body: h.body,
+                response_status: h.response_status,
+                created_at: h.created_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+            }
+        })
+        .collect();
+
+    // Vygeneruj pouze tbody část tabulky
+    let mut html = String::new();
+    for item in history {
+        let status_badge = if let Some(status) = item.response_status {
+            let (color, text_color) = if status >= 200 && status < 300 {
+                ("success", "text-white")
+            } else if status >= 300 && status < 400 {
+                ("secondary", "text-white")
+            } else if status >= 400 && status < 500 {
+                ("warning", "text-dark")
+            } else {
+                ("danger", "text-white")
+            };
+            format!(r#"<span class="badge bg-{} {}">{}</span>"#, color, text_color, status)
+        } else {
+            r#"<span class="text-muted">-</span>"#.to_string()
+        };
+
+        html.push_str(&format!(
+            r#"<tr style="cursor: pointer;" onclick="loadFromHistory('{}', '{}', '{}')">
+                <td><span class="badge bg-blue-lt">{}</span></td>
+                <td><code class="small">{}</code></td>
+                <td><code class="small text-muted">{}</code></td>
+                <td>{}</td>
+                <td><span class="text-muted small">{}</span></td>
+                <td><span class="badge bg-secondary-lt">{}</span></td>
+            </tr>"#,
+            item.method,
+            item.path,
+            item.body_escaped(),
+            item.method,
+            item.path,
+            item.body_preview(),
+            status_badge,
+            item.created_at,
+            item.endpoint_name
+        ));
+    }
+
+    Ok(Html(html))
 }
 
 /// POST /console/execute - Vykoná HTTP request přes aktivní endpoint
