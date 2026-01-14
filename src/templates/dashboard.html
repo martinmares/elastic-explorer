@@ -15,53 +15,53 @@
 <div class="row row-cards">
     <div class="col-12">
         {% if endpoint_name.is_some() %}
-        <!-- Endpoint je vybraný ale data se nepodařilo načíst -->
+        <!-- Endpoint is selected but data could not be loaded -->
         <div class="card">
             <div class="card-body">
                 <div class="alert alert-warning">
                     <h4 class="alert-title">
                         <i class="ti ti-alert-triangle"></i>
-                        Nepodařilo se připojit k Elasticsearch
+                        Failed to connect to Elasticsearch
                     </h4>
                     <div class="text-muted">
-                        Endpoint <strong>{{ endpoint_name.as_ref().unwrap() }}</strong> je vybraný, ale nepodařilo se načíst data.
+                        Endpoint <strong>{{ endpoint_name.as_ref().unwrap() }}</strong> is selected, but data could not be loaded.
                     </div>
                     <div class="mt-3">
-                        <strong>Možné příčiny:</strong>
+                        <strong>Possible causes:</strong>
                         <ul>
-                            <li>Elasticsearch server neběží nebo není dostupný</li>
-                            <li>Špatná URL nebo port</li>
-                            <li>Problém s autentizací (username/password)</li>
-                            <li>Self-signed certifikát (zkontroluj "insecure" nastavení)</li>
+                            <li>Elasticsearch server is not running or is not accessible</li>
+                            <li>Invalid URL or port</li>
+                            <li>Authentication problem (username/password)</li>
+                            <li>Self-signed certificate (check "insecure" setting)</li>
                         </ul>
                     </div>
                 </div>
                 <div class="btn-list">
                     <a href="/endpoints" class="btn btn-primary">
                         <i class="ti ti-settings"></i>
-                        Spravovat endpointy
+                        Manage endpoints
                     </a>
                     <button onclick="location.reload()" class="btn">
                         <i class="ti ti-refresh"></i>
-                        Zkusit znovu
+                        Try again
                     </button>
                 </div>
             </div>
         </div>
         {% else %}
-        <!-- Žádný endpoint není vybraný -->
+        <!-- No endpoint is selected -->
         <div class="empty">
             <div class="empty-icon">
                 <i class="ti ti-server-off"></i>
             </div>
-            <p class="empty-title">Žádný endpoint není vybrán</p>
+            <p class="empty-title">No endpoint selected</p>
             <p class="empty-subtitle text-muted">
-                Pro zobrazení dashboardu nejdříve vyberte nebo přidejte Elasticsearch endpoint
+                To view the dashboard, first select or add an Elasticsearch endpoint
             </p>
             <div class="empty-action">
                 <a href="/endpoints" class="btn btn-primary">
                     <i class="ti ti-settings"></i>
-                    Spravovat endpointy
+                    Manage endpoints
                 </a>
             </div>
         </div>
