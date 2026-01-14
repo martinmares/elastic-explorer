@@ -1,0 +1,219 @@
+<!-- Tabulka indexů -->
+{% if data.is_none() %}
+<div class="card" id="indices-table">
+    <div class="card-body">
+        <div class="alert alert-warning">
+            <h4 class="alert-title">
+                <i class="ti ti-alert-triangle"></i>
+                Nepodařilo se načíst seznam indexů
+            </h4>
+            <div class="text-muted">
+                Zkontrolujte připojení k Elasticsearch endpointu.
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+{% let d = data.as_ref().unwrap() %}
+
+<div class="card" id="indices-table">
+    <!-- Bulk actions toolbar -->
+    <div class="card-header" id="bulk-actions-toolbar" style="display: none;">
+        <div class="d-flex align-items-center">
+            <span class="me-3" id="selected-count">0 vybráno</span>
+            <div class="btn-list">
+                <button class="btn btn-danger btn-sm" onclick="confirmBulkDelete()" title="Smazat vybrané indexy">
+                    <i class="ti ti-trash"></i> Smazat
+                </button>
+                <button class="btn btn-warning btn-sm" onclick="bulkAction('close')" title="Zavřít vybrané indexy">
+                    <i class="ti ti-lock"></i> Zavřít
+                </button>
+                <button class="btn btn-success btn-sm" onclick="bulkAction('open')" title="Otevřít vybrané indexy">
+                    <i class="ti ti-lock-open"></i> Otevřít
+                </button>
+                <button class="btn btn-info btn-sm" onclick="bulkAction('refresh')" title="Refresh vybraných indexů">
+                    <i class="ti ti-refresh"></i> Refresh
+                </button>
+                <button class="btn btn-ghost-secondary btn-sm" onclick="clearSelection()" title="Zrušit výběr">
+                    <i class="ti ti-x"></i> Zrušit výběr
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-vcenter card-table table-striped">
+            <thead>
+                <tr>
+                    <th style="width: 40px;">
+                        <input type="checkbox" id="select-all-indices" class="form-check-input" onchange="toggleSelectAll(this)">
+                    </th>
+                    <th>
+                        <a href="#" class="table-sort"
+                           hx-get="/indices/table?filter={{ d.filter }}&page=1&per_page={{ d.per_page }}&sort_by=health&sort_order={% if d.sort_by == "health" && d.sort_order == "asc" %}desc{% else %}asc{% endif %}&hide_internal={{ d.hide_internal }}"
+                           hx-target="#indices-table"
+                           hx-swap="outerHTML">
+                            Health
+                            {% if d.sort_by == "health" %}
+                            <i class="ti ti-chevron-{% if d.sort_order == "asc" %}up{% else %}down{% endif %}"></i>
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="#" class="table-sort"
+                           hx-get="/indices/table?filter={{ d.filter }}&page=1&per_page={{ d.per_page }}&sort_by=index&sort_order={% if d.sort_by == "index" && d.sort_order == "asc" %}desc{% else %}asc{% endif %}&hide_internal={{ d.hide_internal }}"
+                           hx-target="#indices-table"
+                           hx-swap="outerHTML">
+                            Index
+                            {% if d.sort_by == "index" %}
+                            <i class="ti ti-chevron-{% if d.sort_order == "asc" %}up{% else %}down{% endif %}"></i>
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="#" class="table-sort"
+                           hx-get="/indices/table?filter={{ d.filter }}&page=1&per_page={{ d.per_page }}&sort_by=docs_count&sort_order={% if d.sort_by == "docs_count" && d.sort_order == "asc" %}desc{% else %}asc{% endif %}&hide_internal={{ d.hide_internal }}"
+                           hx-target="#indices-table"
+                           hx-swap="outerHTML">
+                            Docs
+                            {% if d.sort_by == "docs_count" %}
+                            <i class="ti ti-chevron-{% if d.sort_order == "asc" %}up{% else %}down{% endif %}"></i>
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="#" class="table-sort"
+                           hx-get="/indices/table?filter={{ d.filter }}&page=1&per_page={{ d.per_page }}&sort_by=store_size&sort_order={% if d.sort_by == "store_size" && d.sort_order == "asc" %}desc{% else %}asc{% endif %}&hide_internal={{ d.hide_internal }}"
+                           hx-target="#indices-table"
+                           hx-swap="outerHTML">
+                            Size
+                            {% if d.sort_by == "store_size" %}
+                            <i class="ti ti-chevron-{% if d.sort_order == "asc" %}up{% else %}down{% endif %}"></i>
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th>Shards (P/R)</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if d.indices.is_empty() %}
+                <tr>
+                    <td colspan="7" class="text-center text-muted">
+                        <div class="empty-icon">
+                            <i class="ti ti-database-off"></i>
+                        </div>
+                        <p class="empty-title">Žádné indexy nenalezeny</p>
+                        <p class="empty-subtitle">Zkuste změnit filtr</p>
+                    </td>
+                </tr>
+                {% else %}
+                {% for index in d.indices.iter() %}
+                <tr>
+                    <td>
+                        <input type="checkbox" class="form-check-input index-checkbox" value="{{ index.index }}" onchange="updateBulkActions()">
+                    </td>
+                    <td>
+                        {% if index.health == "green" %}
+                        <span class="badge bg-success text-white">{{ index.health }}</span>
+                        {% else if index.health == "yellow" %}
+                        <span class="badge bg-warning text-white">{{ index.health }}</span>
+                        {% else if index.health == "red" %}
+                        <span class="badge bg-danger text-white">{{ index.health }}</span>
+                        {% else %}
+                        <span class="badge bg-secondary text-white">{{ index.health }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div>
+                            <a href="/search?index_pattern={{ index.index }}&query=*" class="text-primary fw-bold">
+                                {{ index.index }}
+                            </a>
+                            <span class="badge bg-blue-lt ms-1">{{ index.status }}</span>
+                        </div>
+                        {% if !index.aliases.is_empty() %}
+                        <div class="text-muted small mt-1">
+                            {% for alias in index.aliases.iter() %}
+                            <a href="/search?index_pattern={{ alias }}&query=*" class="text-muted me-1" style="text-decoration: none;">
+                                <i class="ti ti-arrow-forward"></i> {{ alias }}
+                            </a>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td>{{ index.docs_count_formatted() }}</td>
+                    <td>{{ index.store_size_formatted() }}</td>
+                    <td>
+                        <span class="badge bg-blue-lt">{{ index.pri }}</span> /
+                        <span class="badge bg-cyan-lt">{{ index.rep }}</span>
+                    </td>
+                    <td>
+                        <div class="btn-list">
+                            <button class="btn btn-sm btn-icon btn-ghost-primary"
+                                    onclick="openIndexDetail('{{ index.index }}')"
+                                    title="Detail indexu">
+                                <i class="ti ti-info-circle"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if d.total_pages > 1 %}
+    <div class="card-footer d-flex align-items-center">
+        <p class="m-0 text-muted">
+            Zobrazeno {{ d.showing_from() }} - {{ d.showing_to() }} z {{ d.total }}
+        </p>
+        <ul class="pagination m-0 ms-auto">
+            {% if d.page > 1 %}
+            <li class="page-item">
+                <a class="page-link" href="#"
+                   hx-get="/indices/table?filter={{ d.filter }}&page={{ d.page - 1 }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
+                   hx-target="#indices-table"
+                   hx-swap="outerHTML">
+                    <i class="ti ti-chevron-left"></i> Předchozí
+                </a>
+            </li>
+            {% endif %}
+
+            {% for page_num in 1..=d.total_pages %}
+            {% if page_num == d.page %}
+            <li class="page-item active">
+                <span class="page-link">{{ page_num }}</span>
+            </li>
+            {% else if page_num == 1 || page_num == d.total_pages || (page_num >= d.page - 2 && page_num <= d.page + 2) %}
+            <li class="page-item">
+                <a class="page-link" href="#"
+                   hx-get="/indices/table?filter={{ d.filter }}&page={{ page_num }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
+                   hx-target="#indices-table"
+                   hx-swap="outerHTML">
+                    {{ page_num }}
+                </a>
+            </li>
+            {% else if page_num == d.page - 3 || page_num == d.page + 3 %}
+            <li class="page-item disabled">
+                <span class="page-link">...</span>
+            </li>
+            {% endif %}
+            {% endfor %}
+
+            {% if d.page < d.total_pages %}
+            <li class="page-item">
+                <a class="page-link" href="#"
+                   hx-get="/indices/table?filter={{ d.filter }}&page={{ d.page + 1 }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
+                   hx-target="#indices-table"
+                   hx-swap="outerHTML">
+                    Další <i class="ti ti-chevron-right"></i>
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+    </div>
+    {% endif %}
+</div>
+{% endif %}

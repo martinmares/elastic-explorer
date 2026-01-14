@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% block title %}Node Detail - Elastic Explorer{% endblock %}
+
+{% block nav_nodes %}active{% endblock %}
+
+{% block page_title %}Node Detail{% endblock %}
+
+{% block page_subtitle %}
+<div class="page-pretitle">
+    <a href="/dashboard">Dashboard</a> / Node
+</div>
+{% endblock %}
+
+{% block content %}
+{% if data.is_none() %}
+<div class="row row-cards">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <h4 class="alert-title">
+                        <i class="ti ti-alert-triangle"></i>
+                        Nepodařilo se načíst data nodu
+                    </h4>
+                    <div class="text-muted">
+                        Node <strong>{{ node_id }}</strong> nebylo možné načíst.
+                    </div>
+                </div>
+                <div class="btn-list">
+                    <a href="/dashboard" class="btn btn-primary">
+                        <i class="ti ti-arrow-left"></i>
+                        Zpět na dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+{% let d = data.as_ref().unwrap() %}
+
+<!-- Info karty -->
+<div class="row row-cards mb-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <span class="avatar avatar-sm me-2">
+                        <i class="ti ti-server-2"></i>
+                    </span>
+                    {{ d.name }}
+                </h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td class="text-muted">ID:</td>
+                                    <td><code>{{ d.id }}</code></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">IP:</td>
+                                    <td>{{ d.ip }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Version:</td>
+                                    <td>{{ d.version }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Roles:</td>
+                                    <td>
+                                        {% for role in d.roles.iter() %}
+                                        <span class="badge bg-blue-lt me-1">{{ role }}</span>
+                                        {% endfor %}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td class="text-muted">OS:</td>
+                                    <td>{{ d.os_name }} ({{ d.os_arch }})</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">JVM:</td>
+                                    <td>{{ d.jvm_version }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Documents:</td>
+                                    <td>{{ d.docs_count }} ({{ d.docs_deleted }} deleted)</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Store Size:</td>
+                                    <td>{{ d.store_size_formatted() }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Metriky s grafy -->
+<div class="row row-cards"
+     hx-get="/nodes/{{ d.id }}/metrics"
+     hx-trigger="every 5s"
+     hx-swap="none">
+    <!-- CPU -->
+    <div class="col-md-6 col-lg-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="subheader">CPU Usage</div>
+                {% if d.cpu_percent.is_some() %}
+                {% let cpu = d.cpu_percent.unwrap() %}
+                <div class="h1 mb-3" id="cpuValue">{{ cpu }}%</div>
+                <div class="d-flex justify-content-center">
+                    <canvas id="cpuChart" width="150" height="150"></canvas>
+                </div>
+                {% else %}
+                <div class="h1 mb-3 text-muted" id="cpuValue">-</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- JVM Heap -->
+    <div class="col-md-6 col-lg-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="subheader">JVM Heap</div>
+                {% if d.heap_percent.is_some() %}
+                {% let heap = d.heap_percent.unwrap() %}
+                <div class="h1 mb-3" id="heapValue">{{ heap }}%</div>
+                <div class="text-muted small mb-2">
+                    {{ d.heap_used_formatted() }} / {{ d.heap_max_formatted() }}
+                </div>
+                <div class="d-flex justify-content-center">
+                    <canvas id="heapChart" width="150" height="150"></canvas>
+                </div>
+                {% else %}
+                <div class="h1 mb-3 text-muted">-</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- RAM -->
+    <div class="col-md-6 col-lg-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="subheader">RAM Usage</div>
+                {% if d.ram_percent.is_some() %}
+                {% let ram = d.ram_percent.unwrap() %}
+                <div class="h1 mb-3" id="ramValue">{{ ram }}%</div>
+                <div class="text-muted small mb-2">
+                    {{ d.ram_used_formatted() }} / {{ d.ram_total_formatted() }}
+                </div>
+                <div class="d-flex justify-content-center">
+                    <canvas id="ramChart" width="150" height="150"></canvas>
+                </div>
+                {% else %}
+                <div class="h1 mb-3 text-muted">-</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Disk -->
+    <div class="col-md-6 col-lg-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="subheader">Disk Usage</div>
+                {% if d.disk_percent.is_some() %}
+                {% let disk = d.disk_percent.unwrap() %}
+                <div class="h1 mb-3" id="diskValue">{{ disk }}%</div>
+                <div class="text-muted small mb-2">
+                    {{ d.disk_used_formatted() }} / {{ d.disk_total_formatted() }}
+                </div>
+                <div class="d-flex justify-content-center">
+                    <canvas id="diskChart" width="150" height="150"></canvas>
+                </div>
+                {% else %}
+                <div class="h1 mb-3 text-muted">-</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if data.is_some() %}
+{% let d = data.as_ref().unwrap() %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+    // Společná konfigurace pro všechny gauge grafy
+    const gaugeConfig = (value, label, color) => ({
+        type: 'doughnut',
+        data: {
+            datasets: [{
+                data: [value, 100 - value],
+                backgroundColor: [color, '#e9ecef'],
+                borderWidth: 0,
+            }]
+        },
+        options: {
+            cutout: '75%',
+            responsive: false,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false }
+            }
+        }
+    });
+
+    // Barvy podle hodnoty
+    const getColor = (value, warn, danger) => {
+        if (value > danger) return '#d63939'; // red
+        if (value > warn) return '#f59f00'; // yellow
+        return '#2fb344'; // green
+    };
+
+    // Inicializuj grafy a ulož reference
+    let cpuChart, heapChart, ramChart, diskChart;
+
+    {% if d.cpu_percent.is_some() %}
+    // CPU Chart
+    const cpuValue = {{ d.cpu_percent.unwrap() }};
+    cpuChart = new Chart(document.getElementById('cpuChart'),
+        gaugeConfig(cpuValue, 'CPU', getColor(cpuValue, 60, 80))
+    );
+    {% endif %}
+
+    {% if d.heap_percent.is_some() %}
+    // Heap Chart
+    const heapValue = {{ d.heap_percent.unwrap() }};
+    heapChart = new Chart(document.getElementById('heapChart'),
+        gaugeConfig(heapValue, 'Heap', getColor(heapValue, 75, 90))
+    );
+    {% endif %}
+
+    {% if d.ram_percent.is_some() %}
+    // RAM Chart
+    const ramValue = {{ d.ram_percent.unwrap() }};
+    ramChart = new Chart(document.getElementById('ramChart'),
+        gaugeConfig(ramValue, 'RAM', getColor(ramValue, 75, 90))
+    );
+    {% endif %}
+
+    {% if d.disk_percent.is_some() %}
+    // Disk Chart
+    const diskValue = {{ d.disk_percent.unwrap() }};
+    diskChart = new Chart(document.getElementById('diskChart'),
+        gaugeConfig(diskValue, 'Disk', getColor(diskValue, 75, 90))
+    );
+    {% endif %}
+
+    // Funkce pro update grafu
+    function updateChart(chart, value, warn, danger) {
+        if (!chart) return;
+
+        // Update data
+        chart.data.datasets[0].data = [value, 100 - value];
+        chart.data.datasets[0].backgroundColor = [getColor(value, warn, danger), '#e9ecef'];
+        chart.update('none'); // 'none' mode = bez animace pro rychlý update
+    }
+
+    // HTMX event listener pro update metrics
+    document.body.addEventListener('htmx:afterRequest', function(event) {
+        // Kontrola zda request byl na metrics endpoint
+        if (event.detail.pathInfo.requestPath.includes('/metrics')) {
+            const response = event.detail.xhr.responseText;
+            if (response) {
+                try {
+                    const metrics = JSON.parse(response);
+
+                    // Update CPU
+                    if (metrics.cpu_percent !== null && cpuChart) {
+                        document.getElementById('cpuValue').textContent = metrics.cpu_percent + '%';
+                        updateChart(cpuChart, metrics.cpu_percent, 60, 80);
+                    }
+
+                    // Update Heap
+                    if (metrics.heap_percent !== null && heapChart) {
+                        document.getElementById('heapValue').textContent = metrics.heap_percent + '%';
+                        updateChart(heapChart, metrics.heap_percent, 75, 90);
+                    }
+
+                    // Update RAM
+                    if (metrics.ram_percent !== null && ramChart) {
+                        document.getElementById('ramValue').textContent = metrics.ram_percent + '%';
+                        updateChart(ramChart, metrics.ram_percent, 75, 90);
+                    }
+
+                    // Update Disk
+                    if (metrics.disk_percent !== null && diskChart) {
+                        document.getElementById('diskValue').textContent = metrics.disk_percent + '%';
+                        updateChart(diskChart, metrics.disk_percent, 75, 90);
+                    }
+                } catch (e) {
+                    console.error('Failed to parse metrics:', e);
+                }
+            }
+        }
+    });
+</script>
+{% endif %}
+{% endblock %}

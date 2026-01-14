@@ -1,0 +1,474 @@
+{% extends "base.html" %}
+
+{% block title %}Indexy - Elastic Explorer{% endblock %}
+
+{% block nav_indices %}active{% endblock %}
+
+{% block page_title %}Elasticsearch Indexy{% endblock %}
+
+{% block page_subtitle %}
+<div class="page-pretitle">
+    {% if data.is_some() %}
+    {% let d = data.as_ref().unwrap() %}
+    Celkem {{ d.total }} indexů
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+{% if data.is_none() %}
+<div class="row row-cards">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <h4 class="alert-title">
+                        <i class="ti ti-alert-triangle"></i>
+                        Nepodařilo se načíst seznam indexů
+                    </h4>
+                    <div class="text-muted">
+                        Zkontrolujte připojení k Elasticsearch endpointu.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+{% let d = data.as_ref().unwrap() %}
+
+<!-- Filter -->
+<div class="row row-cards mb-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="row align-items-end g-2">
+                    <div class="col">
+                        <label class="form-label">Filtr indexů (wildcard podporuje *, ?)</label>
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="filter-input"
+                            name="filter"
+                            placeholder="např: zis-*, *internal*, zis-*-inst"
+                            value="{{ d.filter }}"
+                            hx-get="/indices/table"
+                            hx-trigger="input changed delay:500ms, search"
+                            hx-target="#indices-table"
+                            hx-include="[name='per_page'], [name='hide_internal']"
+                            hx-swap="outerHTML">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label">Na stránku</label>
+                        <select
+                            class="form-select"
+                            name="per_page"
+                            hx-get="/indices/table"
+                            hx-trigger="change"
+                            hx-target="#indices-table"
+                            hx-include="#filter-input, [name='hide_internal']"
+                            hx-swap="outerHTML">
+                            <option value="25" {% if d.per_page == 25 %}selected{% endif %}>25</option>
+                            <option value="50" {% if d.per_page == 50 %}selected{% endif %}>50</option>
+                            <option value="100" {% if d.per_page == 100 %}selected{% endif %}>100</option>
+                            <option value="250" {% if d.per_page == 250 %}selected{% endif %}>250</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-check form-switch">
+                            <input
+                                class="form-check-input"
+                                type="checkbox"
+                                name="hide_internal"
+                                value="true"
+                                {% if d.hide_internal %}checked{% endif %}
+                                hx-get="/indices/table"
+                                hx-trigger="change"
+                                hx-target="#indices-table"
+                                hx-include="#filter-input, [name='per_page']"
+                                hx-swap="outerHTML">
+                            <span class="form-check-label">Skrýt interní indexy</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabulka indexů -->
+<div class="row row-cards">
+    <div class="col-12">
+        <div id="indices-table"
+             hx-get="/indices/table?filter={{ d.filter }}&page={{ d.page }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
+             hx-trigger="load"
+             hx-swap="outerHTML">
+            <div class="card">
+                <div class="card-body text-center">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="text-muted mt-2">Načítám indexy...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+
+<!-- Modal pro detail indexu -->
+<div class="modal modal-blur fade" id="index-detail-modal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
+        <div class="modal-content shadow-lg">
+            <div class="modal-header">
+                <h5 class="modal-title">Detail indexu</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+            </div>
+            <div class="modal-body p-0" id="index-detail-modal-content">
+                <div class="text-center p-5">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="text-muted mt-2">Načítám...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal pro bulk operace -->
+<div class="modal modal-blur fade" id="bulk-operation-modal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content shadow-lg">
+            <div class="modal-header">
+                <h5 class="modal-title" id="bulk-operation-title">Bulk operace</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít" id="bulk-modal-close-btn" style="display: none;"></button>
+            </div>
+            <div class="modal-body" id="bulk-operation-content">
+                <!-- Sem se dynamicky vloží obsah -->
+            </div>
+            <div class="modal-footer" id="bulk-operation-footer">
+                <!-- Sem se dynamicky vloží tlačítka -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// JavaScript funkce pro správu indexů
+// Tyto funkce musí být v hlavní šabloně, aby přežily HTMX update
+
+// Toggle select all checkboxes
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.index-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    updateBulkActions();
+}
+
+// Update bulk actions toolbar visibility and selected count
+function updateBulkActions() {
+    const checkboxes = document.querySelectorAll('.index-checkbox:checked');
+    const toolbar = document.getElementById('bulk-actions-toolbar');
+    const countSpan = document.getElementById('selected-count');
+    const selectAll = document.getElementById('select-all-indices');
+
+    if (!toolbar || !countSpan || !selectAll) return;
+
+    const count = checkboxes.length;
+    const total = document.querySelectorAll('.index-checkbox').length;
+
+    if (count > 0) {
+        toolbar.style.display = 'block';
+        countSpan.textContent = count + ' vybráno';
+    } else {
+        toolbar.style.display = 'none';
+        selectAll.checked = false;
+    }
+
+    // Update select-all checkbox state
+    if (count === total && total > 0) {
+        selectAll.checked = true;
+        selectAll.indeterminate = false;
+    } else if (count > 0) {
+        selectAll.checked = false;
+        selectAll.indeterminate = true;
+    } else {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+    }
+}
+
+// Clear selection
+function clearSelection() {
+    document.querySelectorAll('.index-checkbox').forEach(cb => cb.checked = false);
+    const selectAll = document.getElementById('select-all-indices');
+    if (selectAll) selectAll.checked = false;
+    updateBulkActions();
+}
+
+// Get selected indices
+function getSelectedIndices() {
+    const checkboxes = document.querySelectorAll('.index-checkbox:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+// Confirm bulk delete
+function confirmBulkDelete() {
+    const indices = getSelectedIndices();
+    if (indices.length === 0) return;
+    showBulkOperationModal('delete', indices);
+}
+
+// Perform bulk action
+function bulkAction(action) {
+    const indices = getSelectedIndices();
+    if (indices.length === 0) return;
+    showBulkOperationModal(action, indices);
+}
+
+// Show bulk operation modal with confirmation
+function showBulkOperationModal(action, indices) {
+    const modal = new bootstrap.Modal(document.getElementById('bulk-operation-modal'), {
+        backdrop: 'static',
+        keyboard: false
+    });
+
+    const actionLabels = {
+        'delete': 'Smazat',
+        'close': 'Zavřít',
+        'open': 'Otevřít',
+        'refresh': 'Refresh'
+    };
+
+    const actionColors = {
+        'delete': 'danger',
+        'close': 'warning',
+        'open': 'success',
+        'refresh': 'info'
+    };
+
+    const actionLabel = actionLabels[action] || action;
+    const actionColor = actionColors[action] || 'primary';
+
+    // Set modal title
+    document.getElementById('bulk-operation-title').textContent = `${actionLabel} indexy`;
+
+    // Show confirmation screen
+    const content = document.getElementById('bulk-operation-content');
+    content.innerHTML = `
+        <div class="alert alert-${actionColor}">
+            <h4 class="alert-title">
+                <i class="ti ti-alert-circle"></i>
+                Opravdu chcete provést tuto operaci?
+            </h4>
+            <div class="text-muted">
+                Operace <strong>${actionLabel}</strong> bude provedena na <strong>${indices.length}</strong> indexech.
+            </div>
+        </div>
+        <div class="list-group list-group-flush" style="max-height: 300px; overflow-y: auto;">
+            ${indices.map(idx => `
+                <div class="list-group-item">
+                    <i class="ti ti-database me-2"></i>
+                    <strong>${idx}</strong>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    // Show confirmation buttons
+    const footer = document.getElementById('bulk-operation-footer');
+    footer.innerHTML = `
+        <button type="button" class="btn" data-bs-dismiss="modal">Zrušit</button>
+        <button type="button" class="btn btn-${actionColor}" onclick="executeBulkOperation('${action}', ${JSON.stringify(indices).replace(/"/g, '&quot;')})">
+            ${actionLabel}
+        </button>
+    `;
+
+    // Hide close button in header
+    document.getElementById('bulk-modal-close-btn').style.display = 'none';
+
+    modal.show();
+}
+
+// Execute bulk operation with progress
+async function executeBulkOperation(action, indices) {
+    const content = document.getElementById('bulk-operation-content');
+    const footer = document.getElementById('bulk-operation-footer');
+
+    // Show progress screen
+    footer.innerHTML = ''; // Hide buttons during operation
+
+    const results = [];
+    let successCount = 0;
+    let failedCount = 0;
+
+    content.innerHTML = `
+        <div class="mb-4">
+            <div class="d-flex justify-content-between mb-2">
+                <span>Probíhá operace...</span>
+                <span id="bulk-progress-text">0 / ${indices.length}</span>
+            </div>
+            <div class="progress">
+                <div class="progress-bar progress-bar-striped progress-bar-animated"
+                     id="bulk-progress-bar"
+                     role="progressbar"
+                     style="width: 0%">
+                </div>
+            </div>
+        </div>
+        <div id="bulk-current-operation" class="text-muted mb-3"></div>
+        <div id="bulk-results-list" class="list-group list-group-flush" style="max-height: 300px; overflow-y: auto;"></div>
+    `;
+
+    const progressBar = document.getElementById('bulk-progress-bar');
+    const progressText = document.getElementById('bulk-progress-text');
+    const currentOpText = document.getElementById('bulk-current-operation');
+    const resultsList = document.getElementById('bulk-results-list');
+
+    // Process each index
+    for (let i = 0; i < indices.length; i++) {
+        const indexName = indices[i];
+
+        // Update current operation text
+        currentOpText.innerHTML = `<i class="ti ti-loader"></i> Zpracovávám: <strong>${indexName}</strong>`;
+
+        try {
+            // Call API endpoint
+            const response = await fetch(`/indices/bulk/${action}/${encodeURIComponent(indexName)}`, {
+                method: 'POST'
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                successCount++;
+                results.push({ index: indexName, success: true, message: result.message || 'OK' });
+
+                // Add success item to results
+                resultsList.innerHTML += `
+                    <div class="list-group-item">
+                        <div class="d-flex align-items-center">
+                            <i class="ti ti-check text-success me-2"></i>
+                            <strong>${indexName}</strong>
+                            <span class="ms-auto text-muted small">${result.message || 'OK'}</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                failedCount++;
+                results.push({ index: indexName, success: false, message: result.error || 'Chyba' });
+
+                // Add error item to results
+                resultsList.innerHTML += `
+                    <div class="list-group-item">
+                        <div class="d-flex align-items-center">
+                            <i class="ti ti-x text-danger me-2"></i>
+                            <strong>${indexName}</strong>
+                            <span class="ms-auto text-danger small">${result.error || 'Chyba'}</span>
+                        </div>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            failedCount++;
+            results.push({ index: indexName, success: false, message: error.message });
+
+            // Add error item to results
+            resultsList.innerHTML += `
+                <div class="list-group-item">
+                    <div class="d-flex align-items-center">
+                        <i class="ti ti-x text-danger me-2"></i>
+                        <strong>${indexName}</strong>
+                        <span class="ms-auto text-danger small">${error.message}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Update progress
+        const progress = ((i + 1) / indices.length) * 100;
+        progressBar.style.width = `${progress}%`;
+        progressText.textContent = `${i + 1} / ${indices.length}`;
+
+        // Scroll to bottom of results
+        resultsList.scrollTop = resultsList.scrollHeight;
+    }
+
+    // Show final results
+    currentOpText.innerHTML = '';
+    progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+    progressBar.classList.add(failedCount > 0 ? 'bg-warning' : 'bg-success');
+
+    const summaryClass = failedCount > 0 ? 'warning' : 'success';
+    const summaryIcon = failedCount > 0 ? 'alert-triangle' : 'check';
+
+    // Insert summary at the beginning
+    const summaryDiv = document.createElement('div');
+    summaryDiv.className = `alert alert-${summaryClass} mb-3`;
+    summaryDiv.innerHTML = `
+        <h4 class="alert-title">
+            <i class="ti ti-${summaryIcon}"></i>
+            Operace dokončena
+        </h4>
+        <div>
+            <strong>${successCount}</strong> úspěšných,
+            <strong>${failedCount}</strong> neúspěšných
+        </div>
+    `;
+    content.insertBefore(summaryDiv, content.firstChild);
+
+    // Show close button
+    footer.innerHTML = `
+        <button type="button" class="btn btn-primary" onclick="completeBulkOperation()">
+            OK
+        </button>
+    `;
+
+    // Enable close button in header
+    document.getElementById('bulk-modal-close-btn').style.display = 'block';
+}
+
+// Complete bulk operation and refresh table
+function completeBulkOperation() {
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('bulk-operation-modal'));
+    if (modal) {
+        modal.hide();
+    }
+
+    // Wait for modal to close, then refresh
+    setTimeout(() => {
+        // Clear selection
+        clearSelection();
+
+        // Force reload the page to refresh the table
+        // HTMX trigger wasn't working reliably, so we use simple reload
+        window.location.reload();
+    }, 300);
+}
+
+// Open index detail modal
+function openIndexDetail(indexName) {
+    console.log('Opening detail for:', indexName);
+
+    // Load index detail via HTMX
+    htmx.ajax('GET', `/indices/detail/${encodeURIComponent(indexName)}`, {
+        target: '#index-detail-modal-content',
+        swap: 'innerHTML'
+    }).then(() => {
+        console.log('Content loaded, showing modal');
+        // Show modal with explicit backdrop configuration
+        const modalElement = document.getElementById('index-detail-modal');
+        if (modalElement) {
+            const modal = new bootstrap.Modal(modalElement, {
+                backdrop: true,  // Zobrazit backdrop (stín)
+                keyboard: true,  // Zavřít při ESC
+                focus: true      // Fokus na modal
+            });
+            modal.show();
+        } else {
+            console.error('Modal element not found!');
+        }
+    }).catch(err => {
+        console.error('Failed to load index detail:', err);
+    });
+}
+</script>
+{% endblock %}

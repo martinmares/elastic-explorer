@@ -1,0 +1,468 @@
+{% extends "base.html" %}
+
+{% block title %}Dev Console - Elastic Explorer{% endblock %}
+
+{% block nav_console %}active{% endblock %}
+
+{% block page_title %}Dev Console{% endblock %}
+
+{% block page_subtitle %}
+<div class="page-pretitle">Elasticsearch API Explorer</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+.console-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.console-editor {
+    display: flex;
+    flex-direction: column;
+}
+
+.console-response {
+    display: flex;
+    flex-direction: column;
+}
+
+.response-body {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-x: auto;
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.history-item {
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.history-item:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+[data-bs-theme="dark"] .history-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.method-badge {
+    display: inline-block;
+    min-width: 60px;
+    text-align: center;
+}
+
+@media (max-width: 992px) {
+    .console-container {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Request Editor & Response -->
+<div class="console-container">
+    <!-- Left side - Request Editor -->
+    <div class="console-editor">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="ti ti-code me-1"></i>
+                    Request
+                </h3>
+            </div>
+            <div class="card-body">
+                <form id="console-form">
+                    <!-- HTTP Method -->
+                    <div class="mb-3">
+                        <label class="form-label">HTTP Method</label>
+                        <select name="method" id="console-method" class="form-select" required>
+                            <option value="GET" selected>GET</option>
+                            <option value="POST">POST</option>
+                            <option value="PUT">PUT</option>
+                            <option value="DELETE">DELETE</option>
+                            <option value="HEAD">HEAD</option>
+                        </select>
+                    </div>
+
+                    <!-- Path -->
+                    <div class="mb-3">
+                        <label class="form-label">Path</label>
+                        <input type="text" name="path" id="console-path" class="form-control font-monospace"
+                               placeholder="např. /_search nebo /_cat/indices?v" required>
+                        <div class="form-hint">Začíná lomítkem, např. /_cat/indices nebo /my-index/_search</div>
+                    </div>
+
+                    <!-- Request Body -->
+                    <div class="mb-3" id="body-container">
+                        <label class="form-label">Request Body (JSON)</label>
+                        <textarea name="body" id="console-body" class="form-control font-monospace"
+                                  rows="10" placeholder='{
+  "query": {
+    "match_all": {}
+  },
+  "size": 10
+}'></textarea>
+                        <div class="form-hint">Pouze pro POST a PUT metody</div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary" id="execute-btn">
+                            <i class="ti ti-player-play me-1"></i>
+                            Execute Request
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right side - Response -->
+    <div class="console-response">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="ti ti-file-text me-1"></i>
+                    Response
+                </h3>
+                <div class="card-actions" id="response-actions" style="display: none;">
+                    <span class="badge bg-success me-2" id="response-status"></span>
+                    <button type="button" class="btn btn-sm btn-ghost-primary" onclick="copyResponseToClipboard()">
+                        <i class="ti ti-copy"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="response-empty" class="empty" style="padding: 2rem;">
+                    <div class="empty-icon">
+                        <i class="ti ti-arrow-left"></i>
+                    </div>
+                    <p class="empty-title">Žádná odpověď</p>
+                    <p class="empty-subtitle text-muted">
+                        Vykonejte request pro zobrazení odpovědi
+                    </p>
+                </div>
+                <div id="response-loading" class="text-center" style="display: none; padding: 2rem;">
+                    <div class="spinner-border text-primary mb-3" role="status">
+                        <span class="visually-hidden">Načítám...</span>
+                    </div>
+                    <p class="text-muted">Vykonávám request...</p>
+                </div>
+                <pre id="response-body" class="response-body bg-dark text-white p-3 rounded mb-0" style="display: none;"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- History -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="ti ti-history me-1"></i>
+                    History
+                </h3>
+                {% if data.is_some() %}
+                <div class="card-actions">
+                    <a href="/console" class="btn btn-sm btn-ghost-secondary">
+                        <i class="ti ti-refresh"></i> Zobrazit vše
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if data.is_some() && !data.as_ref().unwrap().history.is_empty() %}
+            {% let d = data.as_ref().unwrap() %}
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 100px;">Method</th>
+                            <th style="width: 200px;">Endpoint</th>
+                            <th>Path</th>
+                            <th style="width: 100px;">Status</th>
+                            <th style="width: 180px;">Time</th>
+                            <th style="width: 80px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in d.history.iter() %}
+                        <tr class="history-item" onclick="loadHistoryItem({{ item.id }})">
+                            <td>
+                                <span class="badge method-badge {% if item.method == "GET" %}bg-blue{% else if item.method == "POST" %}bg-green{% else if item.method == "PUT" %}bg-orange{% else if item.method == "DELETE" %}bg-red{% else %}bg-gray{% endif %}">
+                                    {{ item.method }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary-lt">{{ item.endpoint_name }}</span>
+                            </td>
+                            <td>
+                                <code class="small">{{ item.path }}</code>
+                            </td>
+                            <td>
+                                {% if item.response_status.is_some() %}
+                                {% let status = item.response_status.unwrap() %}
+                                <span class="badge
+                                    {% if status >= 200 && status < 300 %}bg-success
+                                    {% else if status >= 300 && status < 400 %}bg-secondary
+                                    {% else if status >= 400 && status < 500 %}bg-warning
+                                    {% else %}bg-danger{% endif %}">
+                                    {{ status }}
+                                </span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="text-muted small">{{ item.created_at }}</span>
+                            </td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-ghost-primary" onclick="event.stopPropagation(); loadHistoryItem({{ item.id }})">
+                                    <i class="ti ti-arrow-back-up"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="card-body">
+                <div class="empty">
+                    <div class="empty-icon">
+                        <i class="ti ti-history-off"></i>
+                    </div>
+                    <p class="empty-title">Žádná historie</p>
+                    <p class="empty-subtitle text-muted">
+                        Historie requestů se zobrazí zde po vykonání prvního dotazu
+                    </p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Confirmation Modal for DELETE/PUT -->
+<div class="modal modal-blur fade" id="confirmModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Potvrdit operaci</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <h4 class="alert-title">
+                        <i class="ti ti-alert-triangle"></i>
+                        Destruktivní operace
+                    </h4>
+                    <div class="text-muted">
+                        Chystáte se vykonat <strong id="confirm-method"></strong> request na cestu:
+                        <br>
+                        <code id="confirm-path" class="d-block mt-2"></code>
+                        <br>
+                        Tato operace může změnit nebo smazat data. Opravdu chcete pokračovat?
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušit</button>
+                <button type="button" class="btn btn-danger" id="confirm-execute-btn">
+                    <i class="ti ti-check"></i>
+                    Ano, vykonat
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let currentResponseBody = '';
+let historyData = {% if data.is_some() %}{{ data.as_ref().unwrap().history_json()|safe }}{% else %}[]{% endif %};
+
+// Toggle body textarea based on method
+document.getElementById('console-method').addEventListener('change', function() {
+    const method = this.value;
+    const bodyContainer = document.getElementById('body-container');
+
+    if (method === 'GET' || method === 'HEAD' || method === 'DELETE') {
+        bodyContainer.style.display = 'none';
+    } else {
+        bodyContainer.style.display = 'block';
+    }
+});
+
+// Trigger change on load
+document.getElementById('console-method').dispatchEvent(new Event('change'));
+
+// Form submit handler
+document.getElementById('console-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const method = document.getElementById('console-method').value;
+    const path = document.getElementById('console-path').value;
+    const body = document.getElementById('console-body').value;
+
+    // Show confirmation for DELETE and PUT
+    if (method === 'DELETE' || method === 'PUT') {
+        showConfirmationModal(method, path, body);
+        return;
+    }
+
+    // Execute directly for other methods
+    await executeRequest(method, path, body);
+});
+
+function showConfirmationModal(method, path, body) {
+    document.getElementById('confirm-method').textContent = method;
+    document.getElementById('confirm-path').textContent = path;
+
+    const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+
+    // Set up confirm button
+    document.getElementById('confirm-execute-btn').onclick = async function() {
+        modal.hide();
+        await executeRequest(method, path, body);
+    };
+
+    modal.show();
+}
+
+async function executeRequest(method, path, body) {
+    // Show loading
+    document.getElementById('response-empty').style.display = 'none';
+    document.getElementById('response-body').style.display = 'none';
+    document.getElementById('response-actions').style.display = 'none';
+    document.getElementById('response-loading').style.display = 'block';
+
+    const executeBtn = document.getElementById('execute-btn');
+    const originalBtnText = executeBtn.innerHTML;
+    executeBtn.disabled = true;
+    executeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Vykonávám...';
+
+    try {
+        // Use URLSearchParams for application/x-www-form-urlencoded
+        const formData = new URLSearchParams();
+        formData.append('method', method);
+        formData.append('path', path);
+        formData.append('body', body);
+
+        const response = await fetch('/console/execute', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString()
+        });
+
+        // Check if response is JSON
+        const contentType = response.headers.get('content-type');
+        let result;
+        if (contentType && contentType.includes('application/json')) {
+            result = await response.json();
+        } else {
+            // Plain text error response
+            const errorText = await response.text();
+            throw new Error(errorText);
+        }
+
+        // Hide loading
+        document.getElementById('response-loading').style.display = 'none';
+
+        // Show response
+        document.getElementById('response-body').style.display = 'block';
+        document.getElementById('response-body').textContent = result.body;
+        document.getElementById('response-actions').style.display = 'flex';
+
+        // Set status badge with appropriate color
+        const statusBadge = document.getElementById('response-status');
+        statusBadge.textContent = result.status;
+
+        // Remove all color classes
+        statusBadge.classList.remove('bg-success', 'bg-warning', 'bg-danger', 'bg-secondary');
+
+        // Add appropriate color based on status code
+        if (result.status >= 200 && result.status < 300) {
+            statusBadge.classList.add('bg-success');
+        } else if (result.status >= 300 && result.status < 400) {
+            statusBadge.classList.add('bg-secondary');
+        } else if (result.status >= 400 && result.status < 500) {
+            statusBadge.classList.add('bg-warning');
+        } else {
+            statusBadge.classList.add('bg-danger');
+        }
+
+        currentResponseBody = result.body;
+
+        // Note: History is saved on backend, page reload not needed
+        // User can manually refresh if they want to see updated history
+
+    } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('response-loading').style.display = 'none';
+        document.getElementById('response-body').style.display = 'block';
+        document.getElementById('response-body').textContent = 'Error: ' + error.message;
+        document.getElementById('response-actions').style.display = 'flex';
+        document.getElementById('response-status').textContent = 'ERROR';
+        document.getElementById('response-status').classList.remove('bg-success');
+        document.getElementById('response-status').classList.add('bg-danger');
+    } finally {
+        executeBtn.disabled = false;
+        executeBtn.innerHTML = originalBtnText;
+    }
+}
+
+function loadHistoryItem(itemId) {
+    const item = historyData.find(h => h.id === itemId);
+    if (!item) return;
+
+    // Load into form
+    document.getElementById('console-method').value = item.method;
+    document.getElementById('console-path').value = item.path;
+
+    if (item.body) {
+        document.getElementById('console-body').value = item.body;
+    } else {
+        document.getElementById('console-body').value = '';
+    }
+
+    // Trigger method change to show/hide body
+    document.getElementById('console-method').dispatchEvent(new Event('change'));
+
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function copyResponseToClipboard() {
+    navigator.clipboard.writeText(currentResponseBody).then(() => {
+        const btn = event.target.closest('button');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="ti ti-check"></i>';
+        btn.classList.add('text-success');
+
+        setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.classList.remove('text-success');
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        alert('Nepodařilo se zkopírovat do schránky');
+    });
+}
+</script>
+{% endblock %}
