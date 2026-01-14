@@ -1,18 +1,31 @@
 # Elastic Explorer
 
-Elasticsearch cluster explorer napsaný v Rustu - jednodušší a přehlednější alternativa k ElasticVue.
+A modern Elasticsearch cluster explorer written in Rust - a simpler and more intuitive alternative to ElasticVue.
 
-## Status
+## Features
 
-🚧 **Projekt je v raném vývoji** 🚧
+- 🔍 **Dashboard** - Cluster health, metrics, and node overview
+- 📊 **Indices** - List, filter (with regex), bulk operations, and detailed information
+- 🔎 **Search** - Query DSL and SQL support with saved queries
+- 🖥️ **Dev Console** - Interactive API explorer (like Kibana's Dev Tools)
+- 🔧 **Shards** - Visual shard distribution and status
+- 📝 **Templates** - Index and component template management
+- 🔐 **Secure** - Passwords stored in OS keychain (macOS Keychain, Linux Secret Service, Windows Credential Manager)
 
-Momentálně je implementována základní infrastruktura:
-- ✅ Backend server (Axum)
-- ✅ SQLite databáze s OS keychain pro hesla
-- ✅ Elasticsearch klient wrapper (podpora ES 3.x - 8.x)
-- ⏳ Web UI (v přípravě)
+## Screenshots
 
-## Rychlý start
+![Dashboard](images/2026-01-14-02-05-36.png)
+*Dashboard with cluster health and metrics*
+
+![Dev Console](images/2026-01-14-11-31-13.png)
+*Dev Console - Interactive API explorer*
+
+## Quick Start
+
+### Prerequisites
+
+- Rust 1.70 or later
+- Elasticsearch 3.x - 8.x
 
 ### Build
 
@@ -20,106 +33,99 @@ Momentálně je implementována základní infrastruktura:
 cargo build --release
 ```
 
-### Spuštění
+### Run
 
 ```bash
-# Základní spuštění (server na 127.0.0.1:8080)
+# Basic usage (server on 127.0.0.1:8080)
 cargo run
 
-# Vlastní port
+# Custom port
 cargo run -- --port 3000
 
-# Vlastní host
+# Custom host
 cargo run -- --host 0.0.0.0 --port 8080
 
-# Neotvírat prohlížeč automaticky
+# Don't open browser automatically
 cargo run -- --no-browser
 
 # Help
 cargo run -- --help
 ```
 
-### Instalace
+### Install
 
 ```bash
 cargo install --path .
 elastic-explorer
 ```
 
-## Databáze a konfigurace
+The application will automatically open in your default browser at http://127.0.0.1:8080
 
-Aplikace vytvoří adresář pro data podle operačního systému:
+## Configuration
+
+The application creates a data directory based on your operating system:
 
 - **macOS/Linux**: `~/.elastic-explorer/data/`
 - **Windows**: `%APPDATA%\elastic-explorer\data\`
 
-V tomto adresáři se nachází SQLite databáze s konfigurací endpointů.
+This directory contains the SQLite database with endpoint configurations.
 
-### Zabezpečení hesel
+### Password Security
 
-Hesla pro Basic Auth jsou ukládána do nativního OS credential store:
+Basic Auth passwords are stored in the native OS credential store:
 - **macOS**: Keychain
 - **Linux**: Secret Service API (GNOME Keyring, KWallet)
 - **Windows**: Credential Manager
 
-## Funkce (plánované)
+As a fallback, passwords are also stored base64-encoded in the database.
 
-### Dashboard
-- Cluster health a metriky
-- Realtime grafy (CPU, RAM, disk)
-- Seznam nodů s rolemi
-- Auto-refresh s konfigurovatelným intervalem
+## Documentation
 
-### Indexy
-- Seznam s paginací
-- **Regexp filtry** (vylepšení oproti ElasticVue)
-- Multi-select operace
-- Smazání s potvrzovacím dialogem
-- Detail indexu (mapping, settings, stats)
+- [Development Progress](docs/PROGRESS.md) - Implementation status
+- [Requirements](docs/REQUIREMENTS.md) - Detailed requirements
+- [UI Implementation](docs/UI_IMPLEMENTED.md) - UI implementation details
+- [Search Improvements](docs/SEARCH_IMPROVEMENTS.md) - Future search enhancements
 
-### Nodes
-- Seznam nodů
-- Detail nodu s metrikami
+## Technology Stack
 
-### Shards
-- Přehledná vizualizace (lepší než ElasticVue)
-- Filtry podle indexu/nodu/stavu
-
-### Search
-- Query DSL editor
-- **SQL API support** (ES 7.x+)
-- Uložené queries (bookmarks)
-- Export výsledků (JSON, CSV)
-
-### Templates
-- Index templates
-- Component templates (ES 7.8+)
-- **Diff view** pro porovnání
-
-## Technologie
-
-- **Backend**: axum 0.8, tokio
+- **Backend**: Axum 0.8, Tokio
 - **Database**: SQLite (sqlx), keyring
-- **ES Client**: reqwest s custom wrapperem
+- **ES Client**: reqwest with custom wrapper
 - **Frontend**: HTMX, Server-Sent Events
 - **Templates**: Askama
+- **UI**: Tabler, Bootstrap 5
 
-### ⚠️ Důležité poznámky pro vývoj
+## Development
 
-**Axum 0.8.x syntaxe:**
-- Path parametry používají `{param}` místo `:param`
-- Příklad: `.route("/indices/detail/{index_name}", get(handler))`
-- **NE**: `.route("/indices/detail/:index_name", get(handler))`
+### Important Notes
 
-## Dokumentace
+**Axum 0.8.x syntax:**
+- Path parameters use `{param}` instead of `:param`
+- Example: `.route("/indices/detail/{index_name}", get(handler))`
+- **NOT**: `.route("/indices/detail/:index_name", get(handler))`
 
-- [REQUIREMENTS.md](REQUIREMENTS.md) - Detailní požadavky
-- [PROGRESS.md](PROGRESS.md) - Průběh implementace
+### Running Tests
 
-## Licence
+```bash
+cargo test
+```
 
-MIT (bude doplněno)
+### Building for Production
 
-## Autor
+```bash
+cargo build --release
+```
 
-Vytvořeno v roce 2026
+The binary will be available at `target/release/elastic-explorer`
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Author
+
+Created in 2026
