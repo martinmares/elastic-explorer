@@ -199,49 +199,38 @@
                     <thead>
                         <tr>
                             <th style="width: 100px;">Method</th>
-                            <th style="width: 200px;">Endpoint</th>
-                            <th>Path</th>
+                            <th style="width: 200px;">Path</th>
+                            <th>Body</th>
                             <th style="width: 100px;">Status</th>
                             <th style="width: 180px;">Time</th>
-                            <th style="width: 80px;"></th>
+                            <th style="width: 150px;">Endpoint</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="history-tbody"
+                           hx-get="/console/history-table"
+                           hx-trigger="historyUpdate from:body"
+                           hx-swap="innerHTML">
                         {% for item in d.history.iter() %}
-                        <tr class="history-item" onclick="loadHistoryItem({{ item.id }})">
-                            <td>
-                                <span class="badge method-badge {% if item.method == "GET" %}bg-blue{% else if item.method == "POST" %}bg-green{% else if item.method == "PUT" %}bg-orange{% else if item.method == "DELETE" %}bg-red{% else %}bg-gray{% endif %}">
-                                    {{ item.method }}
-                                </span>
-                            </td>
-                            <td>
-                                <span class="badge bg-secondary-lt">{{ item.endpoint_name }}</span>
-                            </td>
-                            <td>
-                                <code class="small">{{ item.path }}</code>
-                            </td>
+                        <tr style="cursor: pointer;" onclick="loadFromHistory('{{ item.method }}', '{{ item.path }}', '{{ item.body_escaped() }}')">
+                            <td><span class="badge bg-blue-lt">{{ item.method }}</span></td>
+                            <td><code class="small">{{ item.path }}</code></td>
+                            <td><code class="small text-muted">{{ item.body_preview() }}</code></td>
                             <td>
                                 {% if item.response_status.is_some() %}
                                 {% let status = item.response_status.unwrap() %}
                                 <span class="badge
-                                    {% if status >= 200 && status < 300 %}bg-success
-                                    {% else if status >= 300 && status < 400 %}bg-secondary
-                                    {% else if status >= 400 && status < 500 %}bg-warning
-                                    {% else %}bg-danger{% endif %}">
+                                    {% if status >= 200 && status < 300 %}bg-success text-white
+                                    {% else if status >= 300 && status < 400 %}bg-secondary text-white
+                                    {% else if status >= 400 && status < 500 %}bg-warning text-dark
+                                    {% else %}bg-danger text-white{% endif %}">
                                     {{ status }}
                                 </span>
                                 {% else %}
                                 <span class="text-muted">-</span>
                                 {% endif %}
                             </td>
-                            <td>
-                                <span class="text-muted small">{{ item.created_at }}</span>
-                            </td>
-                            <td class="text-end">
-                                <button type="button" class="btn btn-sm btn-ghost-primary" onclick="event.stopPropagation(); loadHistoryItem({{ item.id }})">
-                                    <i class="ti ti-arrow-back-up"></i>
-                                </button>
-                            </td>
+                            <td><span class="text-muted small">{{ item.created_at }}</span></td>
+                            <td><span class="badge bg-secondary-lt">{{ item.endpoint_name }}</span></td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -419,8 +408,8 @@ async function executeRequest(method, path, body) {
 
         currentResponseBody = result.body;
 
-        // Note: History is saved on backend, page reload not needed
-        // User can manually refresh if they want to see updated history
+        // Trigger history table reload via HTMX
+        htmx.trigger(document.body, 'historyUpdate');
 
     } catch (error) {
         console.error('Error:', error);
@@ -437,24 +426,16 @@ async function executeRequest(method, path, body) {
     }
 }
 
-function loadHistoryItem(itemId) {
-    const item = historyData.find(h => h.id === itemId);
-    if (!item) return;
-
+function loadFromHistory(method, path, body) {
     // Load into form
-    document.getElementById('console-method').value = item.method;
-    document.getElementById('console-path').value = item.path;
-
-    if (item.body) {
-        document.getElementById('console-body').value = item.body;
-    } else {
-        document.getElementById('console-body').value = '';
-    }
+    document.getElementById('console-method').value = method;
+    document.getElementById('console-path').value = path;
+    document.getElementById('console-body').value = body || '';
 
     // Trigger method change to show/hide body
     document.getElementById('console-method').dispatchEvent(new Event('change'));
 
-    // Scroll to top
+    // Scroll to top to see the loaded values
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 

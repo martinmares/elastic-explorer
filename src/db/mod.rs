@@ -238,22 +238,56 @@ impl Database {
     }
 
     /// Uloží záznam do console history
+    /// Pokud již existuje stejné query (endpoint_id, method, path, body), pouze aktualizuje timestamp a response
     pub async fn save_console_history(&self, history: CreateConsoleHistory) -> Result<i64> {
-        let result = sqlx::query(
-            "INSERT INTO console_history (endpoint_id, method, path, body, response_status, response_body)
-             VALUES (?, ?, ?, ?, ?, ?)"
+        // Pokus se najít existující záznam se stejným obsahem
+        let existing = sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM console_history
+             WHERE endpoint_id = ? AND method = ? AND path = ? AND (body IS ? OR (body IS NULL AND ? IS NULL))
+             LIMIT 1"
         )
         .bind(history.endpoint_id)
         .bind(&history.method)
         .bind(&history.path)
         .bind(&history.body)
-        .bind(history.response_status)
-        .bind(&history.response_body)
-        .execute(&self.pool)
+        .bind(&history.body)
+        .fetch_optional(&self.pool)
         .await
-        .context("Failed to save console history")?;
+        .context("Failed to check existing console history")?;
 
-        Ok(result.last_insert_rowid())
+        if let Some(existing_id) = existing {
+            // Update existujícího záznamu (obnoví timestamp a response)
+            sqlx::query(
+                "UPDATE console_history
+                 SET response_status = ?, response_body = ?, created_at = CURRENT_TIMESTAMP
+                 WHERE id = ?"
+            )
+            .bind(history.response_status)
+            .bind(&history.response_body)
+            .bind(existing_id)
+            .execute(&self.pool)
+            .await
+            .context("Failed to update console history")?;
+
+            Ok(existing_id)
+        } else {
+            // Insert nového záznamu
+            let result = sqlx::query(
+                "INSERT INTO console_history (endpoint_id, method, path, body, response_status, response_body)
+                 VALUES (?, ?, ?, ?, ?, ?)"
+            )
+            .bind(history.endpoint_id)
+            .bind(&history.method)
+            .bind(&history.path)
+            .bind(&history.body)
+            .bind(history.response_status)
+            .bind(&history.response_body)
+            .execute(&self.pool)
+            .await
+            .context("Failed to save console history")?;
+
+            Ok(result.last_insert_rowid())
+        }
     }
 
     /// Získá historii console dotazů (poslední N záznamů)
