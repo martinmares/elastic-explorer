@@ -17,27 +17,37 @@
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
     margin-bottom: 1rem;
+    /* Prevent columns from growing beyond their allocated space */
+    min-width: 0;
 }
 
 .console-editor {
     display: flex;
     flex-direction: column;
+    /* Prevent shrinking */
+    min-width: 0;
 }
 
 .console-response {
     display: flex;
     flex-direction: column;
+    /* Prevent growing beyond allocated space */
+    min-width: 0;
 }
 
 .response-body {
     font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
     font-size: 13px;
     line-height: 1.5;
-    white-space: pre-wrap;
-    word-wrap: break-word;
+    /* No wrapping - use scrollbars for both directions */
+    white-space: pre;
+    word-wrap: normal;
     overflow-x: auto;
-    max-height: 600px;
     overflow-y: auto;
+    max-height: 600px;
+    /* Ensure content doesn't push container width */
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .history-item {
@@ -394,17 +404,17 @@ async function executeRequest(method, path, body) {
         statusBadge.textContent = result.status;
 
         // Remove all color classes
-        statusBadge.classList.remove('bg-success', 'bg-warning', 'bg-danger', 'bg-secondary');
+        statusBadge.classList.remove('bg-success', 'bg-warning', 'bg-danger', 'bg-secondary', 'text-white', 'text-dark');
 
         // Add appropriate color based on status code
         if (result.status >= 200 && result.status < 300) {
-            statusBadge.classList.add('bg-success');
+            statusBadge.classList.add('bg-success', 'text-white');
         } else if (result.status >= 300 && result.status < 400) {
-            statusBadge.classList.add('bg-secondary');
+            statusBadge.classList.add('bg-secondary', 'text-white');
         } else if (result.status >= 400 && result.status < 500) {
-            statusBadge.classList.add('bg-warning');
+            statusBadge.classList.add('bg-warning', 'text-dark');
         } else {
-            statusBadge.classList.add('bg-danger');
+            statusBadge.classList.add('bg-danger', 'text-white');
         }
 
         currentResponseBody = result.body;
@@ -449,20 +459,64 @@ function loadHistoryItem(itemId) {
 }
 
 function copyResponseToClipboard() {
-    navigator.clipboard.writeText(currentResponseBody).then(() => {
-        const btn = event.target.closest('button');
-        const originalHtml = btn.innerHTML;
-        btn.innerHTML = '<i class="ti ti-check"></i>';
-        btn.classList.add('text-success');
+    if (!currentResponseBody) {
+        alert('Žádná response k zkopírování');
+        return;
+    }
 
-        setTimeout(() => {
-            btn.innerHTML = originalHtml;
-            btn.classList.remove('text-success');
-        }, 2000);
-    }).catch(err => {
-        console.error('Failed to copy:', err);
+    // Try modern clipboard API first
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(currentResponseBody).then(() => {
+            const btn = event.target.closest('button');
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="ti ti-check"></i>';
+            btn.classList.add('text-success');
+
+            setTimeout(() => {
+                btn.innerHTML = originalHtml;
+                btn.classList.remove('text-success');
+            }, 2000);
+        }).catch(err => {
+            console.error('Clipboard API failed:', err);
+            // Fallback to old method
+            fallbackCopyToClipboard(currentResponseBody);
+        });
+    } else {
+        // Fallback for older browsers
+        fallbackCopyToClipboard(currentResponseBody);
+    }
+}
+
+function fallbackCopyToClipboard(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+
+    try {
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textarea);
+
+        if (successful) {
+            const btn = event.target.closest('button');
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="ti ti-check"></i>';
+            btn.classList.add('text-success');
+
+            setTimeout(() => {
+                btn.innerHTML = originalHtml;
+                btn.classList.remove('text-success');
+            }, 2000);
+        } else {
+            alert('Nepodařilo se zkopírovat do schránky');
+        }
+    } catch (err) {
+        document.body.removeChild(textarea);
+        console.error('Fallback copy failed:', err);
         alert('Nepodařilo se zkopírovat do schránky');
-    });
+    }
 }
 </script>
 {% endblock %}
