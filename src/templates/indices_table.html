@@ -1,14 +1,14 @@
-<!-- Tabulka indexů -->
+<!-- Indices table -->
 {% if data.is_none() %}
 <div class="card" id="indices-table">
     <div class="card-body">
         <div class="alert alert-warning">
             <h4 class="alert-title">
                 <i class="ti ti-alert-triangle"></i>
-                Nepodařilo se načíst seznam indexů
+                Failed to load indices list
             </h4>
             <div class="text-muted">
-                Zkontrolujte připojení k Elasticsearch endpointu.
+                Check your Elasticsearch endpoint connection.
             </div>
         </div>
     </div>
@@ -20,22 +20,22 @@
     <!-- Bulk actions toolbar -->
     <div class="card-header" id="bulk-actions-toolbar" style="display: none;">
         <div class="d-flex align-items-center">
-            <span class="me-3" id="selected-count">0 vybráno</span>
+            <span class="me-3" id="selected-count">0 selected</span>
             <div class="btn-list">
-                <button class="btn btn-danger btn-sm" onclick="confirmBulkDelete()" title="Smazat vybrané indexy">
-                    <i class="ti ti-trash"></i> Smazat
+                <button class="btn btn-danger btn-sm" onclick="confirmBulkDelete()" title="Delete selected indices">
+                    <i class="ti ti-trash"></i> Delete
                 </button>
-                <button class="btn btn-warning btn-sm" onclick="bulkAction('close')" title="Zavřít vybrané indexy">
-                    <i class="ti ti-lock"></i> Zavřít
+                <button class="btn btn-warning btn-sm" onclick="bulkAction('close')" title="Close selected indices">
+                    <i class="ti ti-lock"></i> Close
                 </button>
-                <button class="btn btn-success btn-sm" onclick="bulkAction('open')" title="Otevřít vybrané indexy">
-                    <i class="ti ti-lock-open"></i> Otevřít
+                <button class="btn btn-success btn-sm" onclick="bulkAction('open')" title="Open selected indices">
+                    <i class="ti ti-lock-open"></i> Open
                 </button>
-                <button class="btn btn-info btn-sm" onclick="bulkAction('refresh')" title="Refresh vybraných indexů">
+                <button class="btn btn-info btn-sm" onclick="bulkAction('refresh')" title="Refresh selected indices">
                     <i class="ti ti-refresh"></i> Refresh
                 </button>
-                <button class="btn btn-ghost-secondary btn-sm" onclick="clearSelection()" title="Zrušit výběr">
-                    <i class="ti ti-x"></i> Zrušit výběr
+                <button class="btn btn-ghost-secondary btn-sm" onclick="clearSelection()" title="Clear selection">
+                    <i class="ti ti-x"></i> Clear selection
                 </button>
             </div>
         </div>
@@ -103,8 +103,8 @@
                         <div class="empty-icon">
                             <i class="ti ti-database-off"></i>
                         </div>
-                        <p class="empty-title">Žádné indexy nenalezeny</p>
-                        <p class="empty-subtitle">Zkuste změnit filtr</p>
+                        <p class="empty-title">No indices found</p>
+                        <p class="empty-subtitle">Try changing the filter</p>
                     </td>
                 </tr>
                 {% else %}
@@ -151,7 +151,7 @@
                         <div class="btn-list">
                             <button class="btn btn-sm btn-icon btn-ghost-primary"
                                     onclick="openIndexDetail('{{ index.index }}')"
-                                    title="Detail indexu">
+                                    title="Index detail">
                                 <i class="ti ti-info-circle"></i>
                             </button>
                         </div>
@@ -167,7 +167,7 @@
     {% if d.total_pages > 1 %}
     <div class="card-footer d-flex align-items-center">
         <p class="m-0 text-muted">
-            Zobrazeno {{ d.showing_from() }} - {{ d.showing_to() }} z {{ d.total }}
+            Showing {{ d.showing_from() }} - {{ d.showing_to() }} of {{ d.total }}
         </p>
         <ul class="pagination m-0 ms-auto">
             {% if d.page > 1 %}
@@ -176,7 +176,7 @@
                    hx-get="/indices/table?filter={{ d.filter }}&page={{ d.page - 1 }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
                    hx-target="#indices-table"
                    hx-swap="outerHTML">
-                    <i class="ti ti-chevron-left"></i> Předchozí
+                    <i class="ti ti-chevron-left"></i> Previous
                 </a>
             </li>
             {% endif %}
@@ -208,7 +208,7 @@
                    hx-get="/indices/table?filter={{ d.filter }}&page={{ d.page + 1 }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
                    hx-target="#indices-table"
                    hx-swap="outerHTML">
-                    Další <i class="ti ti-chevron-right"></i>
+                    Next <i class="ti ti-chevron-right"></i>
                 </a>
             </li>
             {% endif %}

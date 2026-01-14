@@ -108,8 +108,8 @@
                     <div class="mb-3">
                         <label class="form-label">Path</label>
                         <input type="text" name="path" id="console-path" class="form-control font-monospace"
-                               placeholder="např. /_search nebo /_cat/indices?v" required>
-                        <div class="form-hint">Začíná lomítkem, např. /_cat/indices nebo /my-index/_search</div>
+                               placeholder="e.g. /_search or /_cat/indices?v" required>
+                        <div class="form-hint">Starts with slash, e.g. /_cat/indices or /my-index/_search</div>
                     </div>
 
                     <!-- Request Body -->
@@ -122,7 +122,7 @@
   },
   "size": 10
 }'></textarea>
-                        <div class="form-hint">Pouze pro POST a PUT metody</div>
+                        <div class="form-hint">Only for POST and PUT methods</div>
                     </div>
 
                     <!-- Submit Button -->
@@ -157,16 +157,16 @@
                     <div class="empty-icon">
                         <i class="ti ti-arrow-left"></i>
                     </div>
-                    <p class="empty-title">Žádná odpověď</p>
+                    <p class="empty-title">No Response</p>
                     <p class="empty-subtitle text-muted">
-                        Vykonejte request pro zobrazení odpovědi
+                        Execute a request to see the response
                     </p>
                 </div>
                 <div id="response-loading" class="text-center" style="display: none; padding: 2rem;">
                     <div class="spinner-border text-primary mb-3" role="status">
-                        <span class="visually-hidden">Načítám...</span>
+                        <span class="visually-hidden">Loading...</span>
                     </div>
-                    <p class="text-muted">Vykonávám request...</p>
+                    <p class="text-muted">Executing request...</p>
                 </div>
                 <pre id="response-body" class="response-body bg-dark text-white p-3 rounded mb-0" style="display: none;"></pre>
             </div>
@@ -186,7 +186,7 @@
                 {% if data.is_some() %}
                 <div class="card-actions">
                     <a href="/console" class="btn btn-sm btn-ghost-secondary">
-                        <i class="ti ti-refresh"></i> Zobrazit vše
+                        <i class="ti ti-refresh"></i> Show All
                     </a>
                 </div>
                 {% endif %}
@@ -253,9 +253,9 @@
                     <div class="empty-icon">
                         <i class="ti ti-history-off"></i>
                     </div>
-                    <p class="empty-title">Žádná historie</p>
+                    <p class="empty-title">No History</p>
                     <p class="empty-subtitle text-muted">
-                        Historie requestů se zobrazí zde po vykonání prvního dotazu
+                        Request history will appear here after executing your first query
                     </p>
                 </div>
             </div>
@@ -269,29 +269,29 @@
     <div class="modal-dialog modal-dialog-centered" role="document">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Potvrdit operaci</h5>
+                <h5 class="modal-title">Confirm Operation</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <div class="alert alert-warning">
                     <h4 class="alert-title">
                         <i class="ti ti-alert-triangle"></i>
-                        Destruktivní operace
+                        Destructive Operation
                     </h4>
                     <div class="text-muted">
-                        Chystáte se vykonat <strong id="confirm-method"></strong> request na cestu:
+                        You are about to execute a <strong id="confirm-method"></strong> request to:
                         <br>
                         <code id="confirm-path" class="d-block mt-2"></code>
                         <br>
-                        Tato operace může změnit nebo smazat data. Opravdu chcete pokračovat?
+                        This operation may modify or delete data. Do you want to continue?
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušit</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger" id="confirm-execute-btn">
                     <i class="ti ti-check"></i>
-                    Ano, vykonat
+                    Yes, Execute
                 </button>
             </div>
         </div>
@@ -363,7 +363,7 @@ async function executeRequest(method, path, body) {
     const executeBtn = document.getElementById('execute-btn');
     const originalBtnText = executeBtn.innerHTML;
     executeBtn.disabled = true;
-    executeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Vykonávám...';
+    executeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Executing...';
 
     try {
         // Use URLSearchParams for application/x-www-form-urlencoded
@@ -460,7 +460,7 @@ function loadHistoryItem(itemId) {
 
 function copyResponseToClipboard() {
     if (!currentResponseBody) {
-        alert('Žádná response k zkopírování');
+        alert('No response to copy');
         return;
     }
 
@@ -510,12 +510,12 @@ function fallbackCopyToClipboard(text) {
                 btn.classList.remove('text-success');
             }, 2000);
         } else {
-            alert('Nepodařilo se zkopírovat do schránky');
+            alert('Failed to copy to clipboard');
         }
     } catch (err) {
         document.body.removeChild(textarea);
         console.error('Fallback copy failed:', err);
-        alert('Nepodařilo se zkopírovat do schránky');
+        alert('Failed to copy to clipboard');
     }
 }
 </script>

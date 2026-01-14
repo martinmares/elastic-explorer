@@ -23,15 +23,15 @@
                         <input type="text"
                                name="pattern"
                                class="form-control"
-                               placeholder="např. my-index-* nebo _all"
+                               placeholder="e.g. my-index-* or _all"
                                value="{{ pattern }}"
                                required>
-                        <div class="form-hint">Použijte * jako wildcard pro filtrování indexů</div>
+                        <div class="form-hint">Use * as wildcard to filter indices</div>
                     </div>
                     <div class="col-md-2 d-flex align-items-end">
                         <button type="submit" class="btn btn-primary w-100">
                             <i class="ti ti-filter me-1"></i>
-                            Filtrovat
+                            Filter
                         </button>
                     </div>
                 </form>
@@ -43,13 +43,13 @@
 {% if data.is_some() %}
 {% let d = data.as_ref().unwrap() %}
 
-<!-- Statistiky -->
+<!-- Statistics -->
 <div class="row mb-3">
     <div class="col-sm-6 col-lg-3">
         <div class="card">
             <div class="card-body">
                 <div class="d-flex align-items-center">
-                    <div class="subheader">Celkem shardů</div>
+                    <div class="subheader">Total shards</div>
                     <div class="ms-auto lh-1">
                         <span class="badge bg-primary text-white">{{ d.stats.total }}</span>
                     </div>
@@ -95,13 +95,13 @@
             <li class="nav-item">
                 <a href="#tab-map" class="nav-link active" data-bs-toggle="tab">
                     <i class="ti ti-layout-grid me-1"></i>
-                    Rozložení shardů
+                    Shard allocation
                 </a>
             </li>
             <li class="nav-item">
                 <a href="#tab-list" class="nav-link" data-bs-toggle="tab">
                     <i class="ti ti-list me-1"></i>
-                    Seznam shardů
+                    Shard list
                 </a>
             </li>
         </ul>
@@ -115,9 +115,9 @@
                     <div class="empty-icon">
                         <i class="ti ti-database-off"></i>
                     </div>
-                    <p class="empty-title">Žádné shardy nenalezeny</p>
+                    <p class="empty-title">No shards found</p>
                     <p class="empty-subtitle text-muted">
-                        Zkuste změnit index pattern
+                        Try changing the index pattern
                     </p>
                 </div>
                 {% else %}
@@ -131,7 +131,7 @@
                                     {{ node.node_name }}
                                 </h3>
                                 <div class="ms-auto">
-                                    <span class="badge bg-blue-lt">{{ node.shards.len() }} shardů</span>
+                                    <span class="badge bg-blue-lt">{{ node.shards.len() }} shards</span>
                                 </div>
                             </div>
                             <div class="card-body">
@@ -167,14 +167,14 @@
                 {% endif %}
             </div>
 
-            <!-- Tab 2: Seznam shardů -->
+            <!-- Tab 2: Shard list -->
             <div class="tab-pane" id="tab-list">
                 {% if d.all_shards.is_empty() %}
                 <div class="empty">
                     <div class="empty-icon">
                         <i class="ti ti-database-off"></i>
                     </div>
-                    <p class="empty-title">Žádné shardy nenalezeny</p>
+                    <p class="empty-title">No shards found</p>
                 </div>
                 {% else %}
                 <div class="table-responsive">
@@ -245,9 +245,9 @@
                     <div class="empty-icon">
                         <i class="ti ti-database"></i>
                     </div>
-                    <p class="empty-title">Zobrazení shardů</p>
+                    <p class="empty-title">Shard view</p>
                     <p class="empty-subtitle text-muted">
-                        Zadejte index pattern pro zobrazení shardů
+                        Enter index pattern to view shards
                     </p>
                 </div>
             </div>

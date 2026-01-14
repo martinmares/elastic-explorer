@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}Indexy - Elastic Explorer{% endblock %}
+{% block title %}Indices - Elastic Explorer{% endblock %}
 
 {% block nav_indices %}active{% endblock %}
 
-{% block page_title %}Elasticsearch Indexy{% endblock %}
+{% block page_title %}Elasticsearch Indices{% endblock %}
 
 {% block page_subtitle %}
 <div class="page-pretitle">
     {% if data.is_some() %}
     {% let d = data.as_ref().unwrap() %}
-    Celkem {{ d.total }} indexů
+    Total {{ d.total }} indices
     {% endif %}
 </div>
 {% endblock %}
@@ -24,10 +24,10 @@
                 <div class="alert alert-warning">
                     <h4 class="alert-title">
                         <i class="ti ti-alert-triangle"></i>
-                        Nepodařilo se načíst seznam indexů
+                        Failed to load indices list
                     </h4>
                     <div class="text-muted">
-                        Zkontrolujte připojení k Elasticsearch endpointu.
+                        Check your Elasticsearch endpoint connection.
                     </div>
                 </div>
             </div>
@@ -44,7 +44,7 @@
             <div class="card-body">
                 <div class="row align-items-end g-2">
                     <div class="col">
-                        <label class="form-label">Filtr indexů (wildcard podporuje *, ?)</label>
+                        <label class="form-label">Indices filter (wildcard supports *, ?)</label>
                         <input
                             type="text"
                             class="form-control"
@@ -59,7 +59,7 @@
                             hx-swap="outerHTML">
                     </div>
                     <div class="col-auto">
-                        <label class="form-label">Na stránku</label>
+                        <label class="form-label">Per page</label>
                         <select
                             class="form-select"
                             name="per_page"
@@ -87,7 +87,7 @@
                                 hx-target="#indices-table"
                                 hx-include="#filter-input, [name='per_page']"
                                 hx-swap="outerHTML">
-                            <span class="form-check-label">Skrýt interní indexy</span>
+                            <span class="form-check-label">Hide internal indices</span>
                         </label>
                     </div>
                 </div>
@@ -96,7 +96,7 @@
     </div>
 </div>
 
-<!-- Tabulka indexů -->
+<!-- Indices table -->
 <div class="row row-cards">
     <div class="col-12">
         <div id="indices-table"
@@ -106,7 +106,7 @@
             <div class="card">
                 <div class="card-body text-center">
                     <div class="spinner-border text-primary" role="status"></div>
-                    <p class="text-muted mt-2">Načítám indexy...</p>
+                    <p class="text-muted mt-2">Loading indices...</p>
                 </div>
             </div>
         </div>
@@ -115,45 +115,45 @@
 
 {% endif %}
 
-<!-- Modal pro detail indexu -->
+<!-- Modal for index detail -->
 <div class="modal modal-blur fade" id="index-detail-modal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
         <div class="modal-content shadow-lg">
             <div class="modal-header">
-                <h5 class="modal-title">Detail indexu</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+                <h5 class="modal-title">Index detail</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-0" id="index-detail-modal-content">
                 <div class="text-center p-5">
                     <div class="spinner-border text-primary" role="status"></div>
-                    <p class="text-muted mt-2">Načítám...</p>
+                    <p class="text-muted mt-2">Loading...</p>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Modal pro bulk operace -->
+<!-- Modal for bulk operations -->
 <div class="modal modal-blur fade" id="bulk-operation-modal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
         <div class="modal-content shadow-lg">
             <div class="modal-header">
-                <h5 class="modal-title" id="bulk-operation-title">Bulk operace</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít" id="bulk-modal-close-btn" style="display: none;"></button>
+                <h5 class="modal-title" id="bulk-operation-title">Bulk operation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="bulk-modal-close-btn" style="display: none;"></button>
             </div>
             <div class="modal-body" id="bulk-operation-content">
-                <!-- Sem se dynamicky vloží obsah -->
+                <!-- Content will be dynamically inserted here -->
             </div>
             <div class="modal-footer" id="bulk-operation-footer">
-                <!-- Sem se dynamicky vloží tlačítka -->
+                <!-- Buttons will be dynamically inserted here -->
             </div>
         </div>
     </div>
 </div>
 
 <script>
-// JavaScript funkce pro správu indexů
-// Tyto funkce musí být v hlavní šabloně, aby přežily HTMX update
+// JavaScript functions for managing indices
+// These functions must be in the main template to survive HTMX updates
 
 // Toggle select all checkboxes
 function toggleSelectAll(checkbox) {
@@ -176,7 +176,7 @@ function updateBulkActions() {
 
     if (count > 0) {
         toolbar.style.display = 'block';
-        countSpan.textContent = count + ' vybráno';
+        countSpan.textContent = count + ' selected';
     } else {
         toolbar.style.display = 'none';
         selectAll.checked = false;
@@ -231,9 +231,9 @@ function showBulkOperationModal(action, indices) {
     });
 
     const actionLabels = {
-        'delete': 'Smazat',
-        'close': 'Zavřít',
-        'open': 'Otevřít',
+        'delete': 'Delete',
+        'close': 'Close',
+        'open': 'Open',
         'refresh': 'Refresh'
     };
 
@@ -248,7 +248,7 @@ function showBulkOperationModal(action, indices) {
     const actionColor = actionColors[action] || 'primary';
 
     // Set modal title
-    document.getElementById('bulk-operation-title').textContent = `${actionLabel} indexy`;
+    document.getElementById('bulk-operation-title').textContent = `${actionLabel} indices`;
 
     // Show confirmation screen
     const content = document.getElementById('bulk-operation-content');
@@ -256,10 +256,10 @@ function showBulkOperationModal(action, indices) {
         <div class="alert alert-${actionColor}">
             <h4 class="alert-title">
                 <i class="ti ti-alert-circle"></i>
-                Opravdu chcete provést tuto operaci?
+                Do you really want to perform this operation?
             </h4>
             <div class="text-muted">
-                Operace <strong>${actionLabel}</strong> bude provedena na <strong>${indices.length}</strong> indexech.
+                Operation <strong>${actionLabel}</strong> will be performed on <strong>${indices.length}</strong> indices.
             </div>
         </div>
         <div class="list-group list-group-flush" style="max-height: 300px; overflow-y: auto;">
@@ -275,7 +275,7 @@ function showBulkOperationModal(action, indices) {
     // Show confirmation buttons
     const footer = document.getElementById('bulk-operation-footer');
     footer.innerHTML = `
-        <button type="button" class="btn" data-bs-dismiss="modal">Zrušit</button>
+        <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-${actionColor}" onclick="executeBulkOperation('${action}', ${JSON.stringify(indices).replace(/"/g, '&quot;')})">
             ${actionLabel}
         </button>
@@ -302,7 +302,7 @@ async function executeBulkOperation(action, indices) {
     content.innerHTML = `
         <div class="mb-4">
             <div class="d-flex justify-content-between mb-2">
-                <span>Probíhá operace...</span>
+                <span>Operation in progress...</span>
                 <span id="bulk-progress-text">0 / ${indices.length}</span>
             </div>
             <div class="progress">
@@ -327,7 +327,7 @@ async function executeBulkOperation(action, indices) {
         const indexName = indices[i];
 
         // Update current operation text
-        currentOpText.innerHTML = `<i class="ti ti-loader"></i> Zpracovávám: <strong>${indexName}</strong>`;
+        currentOpText.innerHTML = `<i class="ti ti-loader"></i> Processing: <strong>${indexName}</strong>`;
 
         try {
             // Call API endpoint
@@ -405,11 +405,11 @@ async function executeBulkOperation(action, indices) {
     summaryDiv.innerHTML = `
         <h4 class="alert-title">
             <i class="ti ti-${summaryIcon}"></i>
-            Operace dokončena
+            Operation completed
         </h4>
         <div>
-            <strong>${successCount}</strong> úspěšných,
-            <strong>${failedCount}</strong> neúspěšných
+            <strong>${successCount}</strong> successful,
+            <strong>${failedCount}</strong> failed
         </div>
     `;
     content.insertBefore(summaryDiv, content.firstChild);
@@ -458,9 +458,9 @@ function openIndexDetail(indexName) {
         const modalElement = document.getElementById('index-detail-modal');
         if (modalElement) {
             const modal = new bootstrap.Modal(modalElement, {
-                backdrop: true,  // Zobrazit backdrop (stín)
-                keyboard: true,  // Zavřít při ESC
-                focus: true      // Fokus na modal
+                backdrop: true,  // Show backdrop (shadow)
+                keyboard: true,  // Close on ESC
+                focus: true      // Focus on modal
             });
             modal.show();
         } else {

@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Endpointy - Elastic Explorer{% endblock %}
+{% block title %}Endpoints - Elastic Explorer{% endblock %}
 
 {% block nav_endpoints %}active{% endblock %}
 
-{% block page_title %}Elasticsearch Endpointy{% endblock %}
+{% block page_title %}Elasticsearch Endpoints{% endblock %}
 
 {% block page_subtitle %}
-<div class="page-pretitle">Správa připojení</div>
+<div class="page-pretitle">Connection Management</div>
 {% endblock %}
 
 {% block page_actions %}
@@ -15,7 +15,7 @@
     <div class="btn-list">
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal-endpoint">
             <i class="ti ti-plus"></i>
-            Přidat endpoint
+            Add Endpoint
         </button>
     </div>
 </div>
@@ -26,7 +26,7 @@
     <div class="col-12">
         <div class="card">
             <div class="card-header">
-                <h3 class="card-title">Uložené endpointy</h3>
+                <h3 class="card-title">Saved Endpoints</h3>
             </div>
             <div class="card-body" id="endpoints-list">
                 {% if endpoints.is_empty() %}
@@ -34,14 +34,14 @@
                     <div class="empty-icon">
                         <i class="ti ti-server-off"></i>
                     </div>
-                    <p class="empty-title">Žádné endpointy</p>
+                    <p class="empty-title">No Endpoints</p>
                     <p class="empty-subtitle text-muted">
-                        Začněte přidáním vašeho prvního Elasticsearch endpointu
+                        Start by adding your first Elasticsearch endpoint
                     </p>
                     <div class="empty-action">
                         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal-endpoint">
                             <i class="ti ti-plus"></i>
-                            Přidat endpoint
+                            Add Endpoint
                         </button>
                     </div>
                 </div>
@@ -59,7 +59,7 @@
                                 <div class="text-truncate">
                                     <strong>{{ endpoint.name }}</strong>
                                     {% if ctx.active_endpoint.is_some() && ctx.active_endpoint.as_ref().unwrap().id == endpoint.id %}
-                                    <span class="badge bg-green-lt ms-2">Aktivní</span>
+                                    <span class="badge bg-green-lt ms-2">Active</span>
                                     {% endif %}
                                 </div>
                                 <div class="text-muted">
@@ -77,27 +77,27 @@
                                 </div>
                             </div>
                             <div class="col-auto">
-                                <!-- Hidden form pro výběr endpointu -->
+                                <!-- Hidden form for endpoint selection -->
                                 <form id="select-form-{{ endpoint.id }}" action="/endpoints/{{ endpoint.id }}/select" method="post" style="display: none;"></form>
 
-                                <!-- Tlačítka -->
+                                <!-- Buttons -->
                                 <div class="btn-list">
                                     <button
                                         class="btn btn-sm btn-icon btn-success"
                                         onclick="event.stopPropagation(); testConnection(event, {{ endpoint.id }}, '{{ endpoint.name }}')"
-                                        title="Test připojení">
+                                        title="Test connection">
                                         <i class="ti ti-plug-connected"></i>
                                     </button>
                                     <button
                                         class="btn btn-sm btn-icon btn-ghost-secondary"
                                         onclick="event.stopPropagation(); document.getElementById('select-form-{{ endpoint.id }}').submit();"
-                                        title="Použít tento endpoint">
+                                        title="Use this endpoint">
                                         <i class="ti ti-check"></i>
                                     </button>
                                     <button
                                         class="btn btn-sm btn-icon btn-ghost-danger"
                                         onclick="event.stopPropagation(); confirmDelete({{ endpoint.id }}, '{{ endpoint.name }}');"
-                                        title="Smazat">
+                                        title="Delete">
                                         <i class="ti ti-trash"></i>
                                     </button>
                                 </div>
@@ -112,30 +112,30 @@
     </div>
 </div>
 
-<!-- Modal pro přidání/editaci endpointu -->
+<!-- Modal for adding/editing endpoint -->
 <div class="modal modal-blur fade" id="modal-endpoint" tabindex="-1" role="dialog" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Přidat Elasticsearch endpoint</h5>
+                <h5 class="modal-title">Add Elasticsearch Endpoint</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form hx-post="/endpoints" hx-target="#endpoints-list" hx-swap="innerHTML">
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label required">Název</label>
+                        <label class="form-label required">Name</label>
                         <input type="text" class="form-control" name="name" placeholder="Production, Local Dev, ..." required>
-                        <small class="form-hint">Popisný název pro tento endpoint</small>
+                        <small class="form-hint">Descriptive name for this endpoint</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label required">URL</label>
                         <input type="url" class="form-control" name="url" placeholder="https://elasticsearch.example.com:9200" required>
-                        <small class="form-hint">Kompletní URL včetně scheme a portu</small>
+                        <small class="form-hint">Complete URL including scheme and port</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" name="insecure">
-                            <span class="form-check-label">Povolit self-signed certifikáty (insecure)</span>
+                            <span class="form-check-label">Allow self-signed certificates (insecure)</span>
                         </label>
                     </div>
                     <hr>
@@ -149,15 +149,15 @@
                         <input type="password" class="form-control" name="password" placeholder="••••••••" autocomplete="current-password">
                         <small class="form-hint">
                             <i class="ti ti-lock"></i>
-                            Heslo bude uloženo bezpečně v OS keychain
+                            Password will be securely stored in OS keychain
                         </small>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn" data-bs-dismiss="modal">Zrušit</button>
+                    <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary">
                         <i class="ti ti-check"></i>
-                        Uložit endpoint
+                        Save Endpoint
                     </button>
                 </div>
             </form>
@@ -165,17 +165,17 @@
     </div>
 </div>
 
-<!-- Modal pro potvrzení smazání -->
+<!-- Modal for delete confirmation -->
 <div class="modal modal-blur fade" id="modal-delete" tabindex="-1" role="dialog" aria-hidden="true">
     <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
         <div class="modal-content">
             <div class="modal-body">
-                <div class="modal-title">Opravdu smazat?</div>
-                <div>Opravdu chcete smazat endpoint <strong id="delete-endpoint-name"></strong>?</div>
+                <div class="modal-title">Really delete?</div>
+                <div>Do you really want to delete endpoint <strong id="delete-endpoint-name"></strong>?</div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn" data-bs-dismiss="modal">Zrušit</button>
-                <button type="button" class="btn btn-danger" id="confirm-delete-btn">Ano, smazat</button>
+                <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirm-delete-btn">Yes, Delete</button>
             </div>
         </div>
     </div>
@@ -290,7 +290,7 @@
                 setTimeout(() => toast.remove(), 300);
             }, 5000);
         } catch (error) {
-            alert('Chyba při testování připojení: ' + error.message);
+            alert('Error testing connection: ' + error.message);
         } finally {
             btn.disabled = false;
             btn.innerHTML = originalHtml;
