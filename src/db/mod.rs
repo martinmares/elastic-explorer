@@ -1,17 +1,20 @@
-pub mod credentials;
 pub mod models;
 
 use anyhow::{Context, Result};
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
+use rand::TryRngCore;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+use sqlx::Row;
 use std::str::FromStr;
 use base64::Engine;
 
 use crate::config;
-use crate::db::credentials::{delete_password, generate_keychain_id, store_password};
 use crate::db::models::{CreateEndpoint, Endpoint, SavedQuery, ConsoleHistory, CreateConsoleHistory};
 
 pub struct Database {
     pool: SqlitePool,
+    encryption_key: [u8; 32],
 }
 
 impl Database {
@@ -34,7 +37,11 @@ impl Database {
         // Spustí migrace
         Self::run_migrations(&pool).await?;
 
-        Ok(Self { pool })
+        let encryption_key = config::load_or_create_key()?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid encryption key length"))?;
+
+        Ok(Self { pool, encryption_key })
     }
 
     /// Spustí SQL migrace
@@ -48,29 +55,37 @@ impl Database {
             .await
             .context("Failed to run migration 001")?;
 
-        // Migration 002 - Add password fallback (ignore if column already exists)
-        let migration_002 = include_str!("../../migrations/002_add_password_fallback.sql");
-        match sqlx::raw_sql(migration_002).execute(pool).await {
-            Ok(_) => {
-                tracing::debug!("Migration 002 applied successfully");
-            }
-            Err(e) => {
-                // Ignore "duplicate column" error - column already exists
-                let err_msg = e.to_string();
-                if err_msg.contains("duplicate column") {
-                    tracing::debug!("Migration 002 skipped - column already exists");
-                } else {
-                    return Err(e).context("Failed to run migration 002");
-                }
-            }
-        }
-
         // Migration 003 - Console history
         let migration_003 = include_str!("../../migrations/003_console_history.sql");
         sqlx::raw_sql(migration_003)
             .execute(pool)
             .await
             .context("Failed to run migration 003")?;
+
+        // Migration 004 - Remove legacy password columns (run only if needed)
+        let columns = sqlx::query("PRAGMA table_info(endpoints)")
+            .fetch_all(pool)
+            .await
+            .context("Failed to inspect endpoints schema")?;
+        let mut has_legacy_columns = false;
+        let mut has_encrypted_column = false;
+        for row in &columns {
+            let name: String = row.get("name");
+            if name == "password_keychain_id" || name == "password_fallback" {
+                has_legacy_columns = true;
+            }
+            if name == "password_encrypted" {
+                has_encrypted_column = true;
+            }
+        }
+
+        if has_legacy_columns || !has_encrypted_column {
+            let migration_004 = include_str!("../../migrations/004_remove_legacy_passwords.sql");
+            sqlx::raw_sql(migration_004)
+                .execute(pool)
+                .await
+                .context("Failed to run migration 004")?;
+        }
 
         tracing::info!("Migrations completed successfully");
         Ok(())
@@ -106,51 +121,28 @@ impl Database {
         let mut tx = self.pool.begin().await?;
 
         let result = sqlx::query(
-            "INSERT INTO endpoints (name, url, insecure, username, password_keychain_id, password_fallback)
-             VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO endpoints (name, url, insecure, username, password_encrypted)
+             VALUES (?, ?, ?, ?, ?)"
         )
         .bind(&endpoint.name)
         .bind(&endpoint.url)
         .bind(endpoint.insecure)
         .bind(&endpoint.username)
-        .bind::<Option<String>>(None) // Keychain ID nastavíme později
-        .bind::<Option<String>>(None) // Fallback password nastavíme později
+        .bind::<Option<String>>(None)
         .execute(&mut *tx)
         .await
         .context("Failed to insert endpoint")?;
 
         let endpoint_id = result.last_insert_rowid();
 
-        // Pokud je heslo, ulož ho do keychain a jako fallback do DB
+        // Pokud je heslo, ulož ho šifrovaně do DB
         if let Some(password) = endpoint.password {
-            let keychain_id = generate_keychain_id(endpoint_id);
-
-            // Zkus uložit do keychain
-            match store_password(&keychain_id, &password) {
-                Ok(_) => {
-                    // Aktualizuj endpoint s keychain_id
-                    sqlx::query("UPDATE endpoints SET password_keychain_id = ? WHERE id = ?")
-                        .bind(&keychain_id)
-                        .bind(endpoint_id)
-                        .execute(&mut *tx)
-                        .await?;
-
-                    tracing::info!("Password stored in keychain for endpoint {}", endpoint_id);
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to store password in keychain: {}. Using fallback.", e);
-                }
-            }
-
-            // VŽDY ulož jako fallback (base64)
-            let fallback = base64::prelude::BASE64_STANDARD.encode(&password);
-            sqlx::query("UPDATE endpoints SET password_fallback = ? WHERE id = ?")
-                .bind(&fallback)
+            let encrypted = self.encrypt_password(&password)?;
+            sqlx::query("UPDATE endpoints SET password_encrypted = ? WHERE id = ?")
+                .bind(&encrypted)
                 .bind(endpoint_id)
                 .execute(&mut *tx)
                 .await?;
-
-            tracing::debug!("Password fallback stored for endpoint {}", endpoint_id);
         }
 
         tx.commit().await?;
@@ -161,15 +153,6 @@ impl Database {
 
     /// Smaže endpoint
     pub async fn delete_endpoint(&self, id: i64) -> Result<()> {
-        // Nejdříve získej endpoint pro keychain_id
-        if let Some(endpoint) = self.get_endpoint(id).await? {
-            // Smaž heslo z keychain
-            if let Some(keychain_id) = endpoint.password_keychain_id
-                && let Err(e) = delete_password(&keychain_id) {
-                    tracing::warn!("Failed to delete password from keychain: {}", e);
-                }
-        }
-
         // Smaž endpoint z DB
         sqlx::query("DELETE FROM endpoints WHERE id = ?")
             .bind(id)
@@ -181,43 +164,62 @@ impl Database {
         Ok(())
     }
 
-    /// Získá heslo pro endpoint (zkusí keychain, pak fallback)
+    /// Získá heslo pro endpoint (dešifruje z DB)
     pub async fn get_endpoint_password(&self, endpoint: &Endpoint) -> Option<String> {
-        // Zkus keychain nejprve
-        if let Some(ref keychain_id) = endpoint.password_keychain_id {
-            match credentials::get_password(keychain_id) {
-                Ok(password) => {
-                    tracing::debug!("Password retrieved from keychain for endpoint {}", endpoint.id);
-                    return Some(password);
-                }
+        if let Some(ref encrypted) = endpoint.password_encrypted {
+            match self.decrypt_password(encrypted) {
+                Ok(password) => return Some(password),
                 Err(e) => {
-                    tracing::warn!("Failed to retrieve password from keychain for endpoint {}: {}. Trying fallback.", endpoint.id, e);
+                    tracing::warn!(
+                        "Failed to decrypt password for endpoint {}: {}",
+                        endpoint.id,
+                        e
+                    );
                 }
             }
         }
 
-        // Fallback na DB (base64 decoded)
-        if let Some(ref fallback) = endpoint.password_fallback {
-            match base64::prelude::BASE64_STANDARD.decode(fallback) {
-                Ok(decoded_bytes) => {
-                    match String::from_utf8(decoded_bytes) {
-                        Ok(password) => {
-                            tracing::info!("Password retrieved from fallback for endpoint {}", endpoint.id);
-                            return Some(password);
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to decode fallback password for endpoint {}: {}", endpoint.id, e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Failed to decode base64 fallback for endpoint {}: {}", endpoint.id, e);
-                }
-            }
+        if endpoint.username.is_some() {
+            tracing::warn!("No password available for endpoint {}", endpoint.id);
+        } else {
+            tracing::debug!("No password available for endpoint {}", endpoint.id);
         }
-
-        tracing::warn!("No password available for endpoint {}", endpoint.id);
         None
+    }
+
+    fn encrypt_password(&self, password: &str) -> Result<String> {
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
+        let mut nonce_bytes = [0u8; 12];
+        let mut rng = rand::rngs::OsRng;
+        rng.try_fill_bytes(&mut nonce_bytes)
+            .context("Failed to generate encryption nonce")?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let ciphertext = cipher
+            .encrypt(nonce, password.as_bytes())
+            .map_err(|_| anyhow::anyhow!("Failed to encrypt password"))?;
+
+        let mut payload = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
+        payload.extend_from_slice(&nonce_bytes);
+        payload.extend_from_slice(&ciphertext);
+        Ok(base64::prelude::BASE64_STANDARD.encode(payload))
+    }
+
+    fn decrypt_password(&self, encrypted: &str) -> Result<String> {
+        let payload = base64::prelude::BASE64_STANDARD
+            .decode(encrypted)
+            .context("Failed to decode encrypted password")?;
+        if payload.len() < 12 {
+            return Err(anyhow::anyhow!("Encrypted password payload is too short"));
+        }
+        let (nonce_bytes, ciphertext) = payload.split_at(12);
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
+        let nonce = Nonce::from_slice(nonce_bytes);
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| anyhow::anyhow!("Failed to decrypt password"))?;
+        let password = String::from_utf8(plaintext)
+            .context("Decrypted password is not valid UTF-8")?;
+        Ok(password)
     }
 
     /// Získá všechny uložené queries
