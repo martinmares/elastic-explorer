@@ -10,7 +10,7 @@ A modern Elasticsearch cluster explorer written in Rust - a simpler and more int
 - 🖥️ **Dev Console** - Interactive API explorer (like Kibana's Dev Tools)
 - 🔧 **Shards** - Visual shard distribution and status
 - 📝 **Templates** - Index and component template management
-- 🔐 **Secure** - Passwords stored in OS keychain (macOS Keychain, Linux Secret Service, Windows Credential Manager)
+- 🔐 **Secure** - Passwords stored encrypted in the local SQLite database
 
 ## Screenshots
 
@@ -68,16 +68,15 @@ The application creates a data directory based on your operating system:
 - **macOS/Linux**: `~/.elastic-explorer/data/`
 - **Windows**: `%APPDATA%\elastic-explorer\data\`
 
-This directory contains the SQLite database with endpoint configurations.
+This directory contains the SQLite database with endpoint configurations and the encryption key file.
 
 ### Password Security
 
-Basic Auth passwords are stored in the native OS credential store:
-- **macOS**: Keychain
-- **Linux**: Secret Service API (GNOME Keyring, KWallet)
-- **Windows**: Credential Manager
+Basic Auth passwords are stored encrypted in the local SQLite database using AES-256-GCM.
+The encryption key is generated on first run and stored in `~/.elastic-explorer/db.key`.
 
-As a fallback, passwords are also stored base64-encoded in the database.
+Important: back up the entire `~/.elastic-explorer/` directory (the SQLite DB plus `db.key`).
+If the key is lost, stored passwords cannot be recovered.
 
 ## Documentation
 
@@ -89,7 +88,7 @@ As a fallback, passwords are also stored base64-encoded in the database.
 ## Technology Stack
 
 - **Backend**: Axum 0.8, Tokio
-- **Database**: SQLite (sqlx), keyring
+- **Database**: SQLite (sqlx)
 - **ES Client**: reqwest with custom wrapper
 - **Frontend**: HTMX, Server-Sent Events
 - **Templates**: Askama
