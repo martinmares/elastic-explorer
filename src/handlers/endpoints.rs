@@ -65,8 +65,13 @@ pub async fn create_endpoint(
         },
     };
 
-    state.db.create_endpoint(create_endpoint).await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let Err(e) = state.db.create_endpoint(create_endpoint).await {
+        tracing::error!("Failed to create endpoint: {}", e);
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to save endpoint: {}", e),
+        ));
+    }
 
     // Vrátíme aktualizovaný seznam endpointů (pro HTMX swap)
     let endpoints = state.db.get_endpoints().await
