@@ -26,10 +26,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 
-# Credential storage
-keyring = "3"
-
-# Encryption (fallback pokud keyring selže)
+# Encryption (passwords stored encrypted in local DB)
 aes-gcm = "0.10"
 rand = "0.9"
 hex = "0.4"

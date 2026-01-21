@@ -8,8 +8,7 @@ pub struct Endpoint {
     pub url: String,
     pub insecure: bool,
     pub username: Option<String>,
-    pub password_keychain_id: Option<String>,
-    pub password_fallback: Option<String>, // Base64 encoded password fallback
+    pub password_encrypted: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -20,7 +19,7 @@ pub struct CreateEndpoint {
     pub url: String,
     pub insecure: bool,
     pub username: Option<String>,
-    pub password: Option<String>, // Toto se uloží do keychain
+    pub password: Option<String>, // Toto se uloží šifrovaně do DB
 }
 
 #[allow(dead_code)]
@@ -30,7 +29,7 @@ pub struct UpdateEndpoint {
     pub url: Option<String>,
     pub insecure: Option<bool>,
     pub username: Option<String>,
-    pub password: Option<String>, // Pokud je Some, aktualizuj keychain
+    pub password: Option<String>, // Pokud je Some, aktualizuj šifrované heslo
 }
 
 #[allow(dead_code)]

@@ -6,9 +6,8 @@ CREATE TABLE IF NOT EXISTS endpoints (
     url TEXT NOT NULL,
     insecure BOOLEAN NOT NULL DEFAULT 0,
     username TEXT,
-    -- Keychain ID pro heslo (např. "endpoint-1")
-    -- Pokud je NULL, heslo není nastaveno
-    password_keychain_id TEXT,
+    -- Encrypted password (base64 nonce+ciphertext)
+    password_encrypted TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
