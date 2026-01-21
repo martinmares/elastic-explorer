@@ -71,7 +71,7 @@ impl EsClient {
         let response: RootResponse = self.get("").await?;
         let version = EsVersion::from_string(&response.version.number)?;
 
-        tracing::info!("Detected Elasticsearch version: {}.{}.{}",
+        tracing::debug!("Detected Elasticsearch version: {}.{}.{}",
             version.major, version.minor, version.patch);
 
         self.version = Some(version.clone());
