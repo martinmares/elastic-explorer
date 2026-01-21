@@ -108,7 +108,20 @@ pub async fn search_page(
         active_endpoint: active_endpoint.clone(),
     };
 
-    // Pokud není zadán index pattern, zobraz jen formulář
+    // Pokud není zadán index pattern nebo query, zkus načíst z cookie
+    let mut query = query;
+    if query.index_pattern.is_empty() {
+        if let Some(cookie_value) = jar.get("search_index_pattern") {
+            query.index_pattern = cookie_value.value().to_string();
+        }
+    }
+    if query.query.is_empty() {
+        if let Some(cookie_value) = jar.get("search_query") {
+            query.query = cookie_value.value().to_string();
+        }
+    }
+
+    // Pokud stále není zadán index pattern (ani v query ani v cookie), zobraz jen prázdný formulář
     if query.index_pattern.is_empty() {
         let template = SearchTemplate {
             ctx,
@@ -120,12 +133,16 @@ pub async fn search_page(
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
 
-    // Ulož index_pattern do cookie jako "indices_filter" (platnost 30 dní)
-    let cookie = Cookie::build(("indices_filter", query.index_pattern.clone()))
+    // Ulož index_pattern a query do cookies (platnost 30 dní)
+    let cookie_pattern = Cookie::build(("search_index_pattern", query.index_pattern.clone()))
         .path("/")
         .max_age(time::Duration::days(30))
         .build();
-    let jar = jar.add(cookie);
+    let cookie_query = Cookie::build(("search_query", query.query.clone()))
+        .path("/")
+        .max_age(time::Duration::days(30))
+        .build();
+    let jar = jar.add(cookie_pattern).add(cookie_query);
 
     // Pokud NENÍ HTMX request a JSOU parametry, vrať stránku s prázdnými výsledky
     // (data se načtou automaticky přes HTMX pomocí JavaScriptu)
