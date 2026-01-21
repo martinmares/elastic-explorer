@@ -88,7 +88,7 @@ async fn load_node_detail(
     let name = node_data["name"].as_str().unwrap_or("unknown").to_string();
     let roles = node_data["roles"].as_array()
         .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
-        .unwrap_or_else(Vec::new);
+        .unwrap_or_default();
 
     let ip = node_data["ip"].as_str().unwrap_or("-").to_string();
     let version = node_data["version"].as_str().unwrap_or("-").to_string();
@@ -247,6 +247,6 @@ async fn load_node_metrics(
         cpu_percent,
         heap_percent,
         ram_percent,
-        disk_percent: disk_percent,
+        disk_percent,
     })
 }

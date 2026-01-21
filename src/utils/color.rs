@@ -30,7 +30,7 @@ pub fn get_text_color_for_background(bg_color: &str) -> String {
 
         // Pro žlutou a světle zelenou: nižší práh (0.35)
         // Pro ostatní: vyšší práh (0.5)
-        let threshold = if (h >= 40.0 && h <= 80.0) || (h >= 90.0 && h <= 150.0) {
+        let threshold = if (40.0..=80.0).contains(&h) || (90.0..=150.0).contains(&h) {
             0.35  // Žlutá a světle zelená oblast
         } else {
             0.5   // Ostatní barvy

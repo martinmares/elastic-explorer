@@ -68,10 +68,6 @@ impl SearchHit {
         }
     }
 
-    /// Vrátí source jako formátovaný JSON string
-    pub fn source_formatted(&self) -> String {
-        serde_json::to_string_pretty(&self.source).unwrap_or_else(|_| self.source.to_string())
-    }
 }
 
 impl SearchResultsData {
@@ -110,16 +106,14 @@ pub async fn search_page(
 
     // Pokud není zadán index pattern nebo query, zkus načíst z cookie
     let mut query = query;
-    if query.index_pattern.is_empty() {
-        if let Some(cookie_value) = jar.get("search_index_pattern") {
+    if query.index_pattern.is_empty()
+        && let Some(cookie_value) = jar.get("search_index_pattern") {
             query.index_pattern = cookie_value.value().to_string();
         }
-    }
-    if query.query.is_empty() {
-        if let Some(cookie_value) = jar.get("search_query") {
+    if query.query.is_empty()
+        && let Some(cookie_value) = jar.get("search_query") {
             query.query = cookie_value.value().to_string();
         }
-    }
 
     // Pokud stále není zadán index pattern (ani v query ani v cookie), zobraz jen prázdný formulář
     if query.index_pattern.is_empty() {
@@ -277,7 +271,7 @@ async fn perform_search(
         }
     }
 
-    let calculated_pages = ((total as usize + safe_per_page - 1) / safe_per_page).max(1);
+    let calculated_pages = (total as usize).div_ceil(safe_per_page).max(1);
     let total_pages = calculated_pages.min(MAX_PAGES);
 
     Ok(SearchResultsData {

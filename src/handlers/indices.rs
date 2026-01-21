@@ -69,11 +69,10 @@ pub async fn list_indices(
     let endpoint = active_endpoint.as_ref().unwrap();
 
     // Načti filtr z cookies, pokud není zadán v query (použij pouze když je defaultní "*")
-    if query.filter == "*" {
-        if let Some(cookie) = jar.get("indices_filter") {
+    if query.filter == "*"
+        && let Some(cookie) = jar.get("indices_filter") {
             query.filter = cookie.value().to_string();
         }
-    }
 
     // Načti data s timeoutem
     let data = match tokio::time::timeout(
@@ -177,7 +176,7 @@ async fn load_indices_data(
     for alias_info in aliases {
         aliases_map
             .entry(alias_info.index)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(alias_info.alias);
     }
 
@@ -235,11 +234,10 @@ async fn load_indices_data(
     }
 
     let total = indices.len();
-    let total_pages = (total + query.per_page - 1) / query.per_page;
+    let total_pages = total.div_ceil(query.per_page);
 
     // Pagination
     let start = (query.page - 1) * query.per_page;
-    let end = start + query.per_page;
     let paginated_indices = indices.into_iter()
         .skip(start)
         .take(query.per_page)
@@ -327,13 +325,11 @@ async fn load_index_detail(
 
     // Parsuj aliasy z response - struktura je: { "index_name": { "aliases": { "alias1": {}, "alias2": {} } } }
     let mut alias_names: Vec<String> = Vec::new();
-    if let Some(index_obj) = aliases_response.get(index_name) {
-        if let Some(aliases_obj) = index_obj.get("aliases") {
-            if let Some(aliases_map) = aliases_obj.as_object() {
-                alias_names = aliases_map.keys().map(|k| k.to_string()).collect();
-            }
+    if let Some(aliases_map) = aliases_response.get(index_name)
+        .and_then(|index_obj| index_obj.get("aliases"))
+        .and_then(|aliases_obj| aliases_obj.as_object()) {
+            alias_names = aliases_map.keys().map(|k| k.to_string()).collect();
         }
-    }
 
     // 3. Načti settings
     let settings_path = format!("/{}/_settings", index_name);

@@ -164,11 +164,10 @@ impl Database {
         // Nejdříve získej endpoint pro keychain_id
         if let Some(endpoint) = self.get_endpoint(id).await? {
             // Smaž heslo z keychain
-            if let Some(keychain_id) = endpoint.password_keychain_id {
-                if let Err(e) = delete_password(&keychain_id) {
+            if let Some(keychain_id) = endpoint.password_keychain_id
+                && let Err(e) = delete_password(&keychain_id) {
                     tracing::warn!("Failed to delete password from keychain: {}", e);
                 }
-            }
         }
 
         // Smaž endpoint z DB
@@ -222,6 +221,7 @@ impl Database {
     }
 
     /// Získá všechny uložené queries
+    #[allow(dead_code)]
     pub async fn get_saved_queries(&self) -> Result<Vec<SavedQuery>> {
         let queries = sqlx::query_as::<_, SavedQuery>(
             "SELECT * FROM saved_queries ORDER BY name"
@@ -233,6 +233,7 @@ impl Database {
         Ok(queries)
     }
 
+    #[allow(dead_code)]
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }

@@ -117,6 +117,7 @@ impl EsClient {
     }
 
     /// Univerzální PUT request
+    #[allow(dead_code)]
     pub async fn put<T>(&self, path: &str, body: Value) -> Result<T>
     where
         T: for<'de> Deserialize<'de>,
@@ -246,10 +247,12 @@ impl EsClient {
         Ok((status_code, body))
     }
 
+    #[allow(dead_code)]
     pub fn version(&self) -> Option<&EsVersion> {
         self.version.as_ref()
     }
 
+    #[allow(dead_code)]
     pub fn base_url(&self) -> &str {
         &self.base_url
     }

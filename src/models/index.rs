@@ -48,10 +48,6 @@ impl IndexInfo {
         format_bytes(self.store_size_bytes())
     }
 
-    /// Vrátí pri_store_size jako human-readable formát
-    pub fn pri_store_size_formatted(&self) -> String {
-        format_bytes(parse_size_to_bytes(&self.pri_store_size))
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

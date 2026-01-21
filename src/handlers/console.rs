@@ -178,11 +178,11 @@ pub async fn console_history_table(
     let mut html = String::new();
     for item in history {
         let status_badge = if let Some(status) = item.response_status {
-            let (color, text_color) = if status >= 200 && status < 300 {
+            let (color, text_color) = if (200..300).contains(&status) {
                 ("success", "text-white")
-            } else if status >= 300 && status < 400 {
+            } else if (300..400).contains(&status) {
                 ("secondary", "text-white")
-            } else if status >= 400 && status < 500 {
+            } else if (400..500).contains(&status) {
                 ("warning", "text-dark")
             } else {
                 ("danger", "text-white")

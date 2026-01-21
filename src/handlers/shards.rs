@@ -207,11 +207,10 @@ async fn load_shards_data(
 
             // Pokud pattern není "*" nebo prázdný, filtruj podle něj
             // Pattern může obsahovat wildcards jako "*audit*"
-            if pattern != "*" && !pattern.is_empty() {
-                if !matches_pattern(&index_name, pattern) {
+            if pattern != "*" && !pattern.is_empty()
+                && !matches_pattern(&index_name, pattern) {
                     continue;
                 }
-            }
 
             shards.push(ShardInfo {
                 index: index_name,
@@ -232,7 +231,7 @@ async fn load_shards_data(
     let mut nodes_map: HashMap<String, Vec<ShardInfo>> = HashMap::new();
     for shard in &shards {
         nodes_map.entry(shard.node.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(shard.clone());
     }
 
