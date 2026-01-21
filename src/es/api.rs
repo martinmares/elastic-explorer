@@ -20,17 +20,20 @@ pub struct ClusterHealth {
 }
 
 /// Cluster stats response (zjednodušená verze)
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClusterStats {
     pub cluster_name: String,
     pub nodes: NodesStats,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NodesStats {
     pub count: NodesCount,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NodesCount {
     pub total: u32,
@@ -39,6 +42,7 @@ pub struct NodesCount {
 }
 
 /// Node info
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NodeInfo {
     pub name: String,
@@ -68,6 +72,7 @@ impl EsClient {
     }
 
     /// Získá cluster stats
+    #[allow(dead_code)]
     pub async fn cluster_stats(&self) -> Result<ClusterStats> {
         self.get("/_cluster/stats").await
     }
@@ -78,6 +83,7 @@ impl EsClient {
     }
 
     /// Získá detailní info o konkrétním nodu
+    #[allow(dead_code)]
     pub async fn get_node(&self, node_id: &str) -> Result<Value> {
         let path = format!("/_nodes/{}", node_id);
         self.get(&path).await
@@ -89,23 +95,27 @@ impl EsClient {
     }
 
     /// Získá detailní info o indexu
+    #[allow(dead_code)]
     pub async fn get_index(&self, index_name: &str) -> Result<Value> {
         let path = format!("/{}", index_name);
         self.get(&path).await
     }
 
     /// Smaže index
+    #[allow(dead_code)]
     pub async fn delete_index(&self, index_name: &str) -> Result<Value> {
         let path = format!("/{}", index_name);
         self.delete(&path).await
     }
 
     /// Získá seznam shardů
+    #[allow(dead_code)]
     pub async fn get_shards(&self) -> Result<Value> {
         self.get("/_cat/shards?format=json").await
     }
 
     /// Search pomocí Query DSL
+    #[allow(dead_code)]
     pub async fn search(&self, indices: &[String], query: Value) -> Result<Value> {
         let path = if indices.is_empty() {
             "/_search".to_string()
@@ -117,13 +127,13 @@ impl EsClient {
     }
 
     /// Search pomocí SQL (ES 7.x+)
+    #[allow(dead_code)]
     pub async fn search_sql(&self, query: &str) -> Result<Value> {
         // Zkontroluj verzi
-        if let Some(version) = self.version() {
-            if version.major < 7 {
+        if let Some(version) = self.version()
+            && version.major < 7 {
                 return Err(anyhow::anyhow!("SQL API requires Elasticsearch 7.x or higher"));
             }
-        }
 
         let body = json!({
             "query": query
@@ -133,18 +143,21 @@ impl EsClient {
     }
 
     /// Získá mappings indexu
+    #[allow(dead_code)]
     pub async fn get_mapping(&self, index_name: &str) -> Result<Value> {
         let path = format!("/{}/_mapping", index_name);
         self.get(&path).await
     }
 
     /// Získá settings indexu
+    #[allow(dead_code)]
     pub async fn get_settings(&self, index_name: &str) -> Result<Value> {
         let path = format!("/{}/_settings", index_name);
         self.get(&path).await
     }
 
     /// Získá index templates
+    #[allow(dead_code)]
     pub async fn get_index_templates(&self) -> Result<Value> {
         // Pro ES 7.8+ použij /_index_template
         // Pro starší verze /_template
@@ -161,12 +174,12 @@ impl EsClient {
     }
 
     /// Získá component templates (ES 7.8+)
+    #[allow(dead_code)]
     pub async fn get_component_templates(&self) -> Result<Value> {
-        if let Some(version) = self.version() {
-            if version.major >= 8 || (version.major == 7 && version.minor >= 8) {
+        if let Some(version) = self.version()
+            && (version.major >= 8 || (version.major == 7 && version.minor >= 8)) {
                 return self.get("/_component_template").await;
             }
-        }
         Err(anyhow::anyhow!("Component templates require Elasticsearch 7.8 or higher"))
     }
 }

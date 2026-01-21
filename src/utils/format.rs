@@ -3,14 +3,11 @@
 pub fn format_number(num: u64) -> String {
     let num_str = num.to_string();
     let mut result = String::new();
-    let mut count = 0;
-
-    for c in num_str.chars().rev() {
+    for (count, c) in num_str.chars().rev().enumerate() {
         if count > 0 && count % 3 == 0 {
             result.push(' ');
         }
         result.push(c);
-        count += 1;
     }
 
     result.chars().rev().collect()

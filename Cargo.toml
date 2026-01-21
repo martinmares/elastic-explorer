@@ -1,25 +1,25 @@
 [package]
 name = "elastic-explorer"
-version = "0.1.0"
-edition = "2021"
+version = "0.2.0"
+edition = "2024"
 
 [dependencies]
 # Web framework
 axum = "0.8"
-axum-extra = { version = "0.10", features = ["cookie"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "trace"] }
 
 # Templating
-askama = "0.12"
-askama_axum = "0.4"
+askama = "0.15"
+#askama_axum = "0.5"
 
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chrono"] }
 
 # HTTP client pro Elasticsearch
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.13", features = ["json"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -31,7 +31,7 @@ keyring = "3"
 
 # Encryption (fallback pokud keyring selže)
 aes-gcm = "0.10"
-rand = "0.8"
+rand = "0.9"
 hex = "0.4"
 
 # CLI
@@ -39,7 +39,7 @@ clap = { version = "4", features = ["derive"] }
 
 # Utility
 anyhow = "1"
-thiserror = "1"
+thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }

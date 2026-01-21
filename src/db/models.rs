@@ -23,6 +23,7 @@ pub struct CreateEndpoint {
     pub password: Option<String>, // Toto se uloží do keychain
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateEndpoint {
     pub name: Option<String>,
@@ -32,6 +33,7 @@ pub struct UpdateEndpoint {
     pub password: Option<String>, // Pokud je Some, aktualizuj keychain
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct SavedQuery {
     pub id: i64,
@@ -44,6 +46,7 @@ pub struct SavedQuery {
     pub updated_at: DateTime<Utc>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSavedQuery {
     pub name: String,
