@@ -90,6 +90,19 @@ pub struct IndexDetail {
     pub settings: Option<String>,  // JSON formatted
     pub mappings: Option<String>,  // JSON formatted
     pub stats: Option<String>,     // JSON formatted
+    pub stats_docs_count: Option<u64>,
+    pub stats_docs_deleted: Option<u64>,
+    pub stats_store_size_bytes: Option<u64>,
+    pub stats_pri_store_size_bytes: Option<u64>,
+    pub stats_segments_count: Option<u64>,
+    pub stats_segments_memory_bytes: Option<u64>,
+    pub stats_search_query_total: Option<u64>,
+    pub stats_search_query_time_ms: Option<u64>,
+    pub stats_indexing_total: Option<u64>,
+    pub stats_indexing_time_ms: Option<u64>,
+    pub stats_primary_store_ratio: Option<u8>,
+    pub stats_deleted_ratio: Option<u8>,
+    pub stats_segments_memory_ratio: Option<u8>,
 }
 
 impl IndexDetail {
@@ -113,5 +126,41 @@ impl IndexDetail {
     /// Vrátí pri_store_size jako human-readable formát
     pub fn pri_store_size_formatted(&self) -> String {
         format_bytes(parse_size_to_bytes(&self.pri_store_size))
+    }
+
+    pub fn stats_docs_count_formatted(&self) -> String {
+        format_number(self.stats_docs_count.unwrap_or(0))
+    }
+
+    pub fn stats_docs_deleted_formatted(&self) -> String {
+        format_number(self.stats_docs_deleted.unwrap_or(0))
+    }
+
+    pub fn stats_store_size_formatted(&self) -> String {
+        format_bytes(self.stats_store_size_bytes.unwrap_or(0))
+    }
+
+    pub fn stats_pri_store_size_formatted(&self) -> String {
+        format_bytes(self.stats_pri_store_size_bytes.unwrap_or(0))
+    }
+
+    pub fn stats_segments_memory_formatted(&self) -> String {
+        format_bytes(self.stats_segments_memory_bytes.unwrap_or(0))
+    }
+
+    pub fn stats_search_query_total_formatted(&self) -> String {
+        format_number(self.stats_search_query_total.unwrap_or(0))
+    }
+
+    pub fn stats_indexing_total_formatted(&self) -> String {
+        format_number(self.stats_indexing_total.unwrap_or(0))
+    }
+
+    pub fn stats_search_time_formatted(&self) -> String {
+        format!("{} ms", format_number(self.stats_search_query_time_ms.unwrap_or(0)))
+    }
+
+    pub fn stats_indexing_time_formatted(&self) -> String {
+        format!("{} ms", format_number(self.stats_indexing_time_ms.unwrap_or(0)))
     }
 }

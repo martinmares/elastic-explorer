@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                    placeholder="e.g. my-index-* or _all"
                                    value="{% if data.is_some() %}{{ data.as_ref().unwrap().index_pattern }}{% endif %}"
                                    required>
-                            <div class="form-hint">Use * as wildcard, or _all for all indices</div>
+                            <div class="form-hint">Use * as wildcard; combine patterns with OR or comma</div>
                         </div>
                         <div class="col-md-5">
                             <label class="form-label">Query</label>

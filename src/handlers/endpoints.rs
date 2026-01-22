@@ -17,6 +17,102 @@ pub struct AppState {
     pub db: Database,
 }
 
+fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: Option<i64>) -> String {
+    if endpoints.is_empty() {
+        return r#"<div class="empty">
+            <div class="empty-icon"><i class="ti ti-server-off"></i></div>
+            <p class="empty-title">Žádné endpointy</p>
+        </div>"#
+            .to_string();
+    }
+
+    let items: Vec<String> = endpoints.iter().map(|ep| {
+        let is_active = active_id == Some(ep.id);
+        let active_badge = if is_active {
+            r#"<span class="badge bg-green-lt ms-2">Active</span>"#
+        } else {
+            ""
+        };
+        let avatar_class = if is_active { "bg-green" } else { "" };
+        let insecure_badge = if ep.insecure {
+            r#"<span class="badge bg-yellow-lt ms-2">
+                                        <i class="ti ti-shield-off"></i> Insecure
+                                    </span>"#
+        } else {
+            ""
+        };
+        let username_badge = if let Some(username) = &ep.username {
+            format!(
+                r#"<span class="badge bg-blue-lt ms-2">
+                                        <i class="ti ti-user"></i> {}
+                                    </span>"#,
+                username
+            )
+        } else {
+            String::new()
+        };
+
+        format!(r##"<div class="list-group-item">
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <span class="avatar {}"><i class="ti ti-server"></i></span>
+                    </div>
+                    <div class="col" style="cursor: pointer;" onclick="document.getElementById('select-form-{}').submit();">
+                        <div class="text-truncate">
+                            <strong>{}</strong>
+                            {}
+                        </div>
+                        <div class="text-muted">
+                            <code>{}</code>
+                            {}
+                            {}
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <form id="select-form-{}" action="/endpoints/{}/select" method="post" style="display: none;"></form>
+                        <div class="btn-list">
+                            <button
+                                class="btn btn-sm btn-icon btn-success"
+                                onclick="event.stopPropagation(); testConnection(event, {}, '{}')"
+                                title="Test connection">
+                                <i class="ti ti-plug-connected"></i>
+                            </button>
+                            <button
+                                class="btn btn-sm btn-icon btn-ghost-secondary"
+                                onclick="event.stopPropagation(); document.getElementById('select-form-{}').submit();"
+                                title="Use this endpoint">
+                                <i class="ti ti-check"></i>
+                            </button>
+                            <button
+                                class="btn btn-sm btn-icon btn-ghost-danger"
+                                onclick="event.stopPropagation(); confirmDelete({}, '{}');"
+                                title="Delete">
+                                <i class="ti ti-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>"##,
+            avatar_class,
+            ep.id,
+            ep.name,
+            active_badge,
+            ep.url,
+            insecure_badge,
+            username_badge,
+            ep.id,
+            ep.id,
+            ep.id,
+            ep.name,
+            ep.id,
+            ep.id,
+            ep.name
+        )
+    }).collect();
+
+    format!(r##"<div class="list-group list-group-flush">{}</div>"##, items.join(""))
+}
+
 #[derive(Deserialize)]
 pub struct CreateEndpointForm {
     name: String,
@@ -47,6 +143,7 @@ pub async fn list_endpoints(
 /// POST /endpoints - Vytvoří nový endpoint
 pub async fn create_endpoint(
     State(state): State<Arc<AppState>>,
+    jar: CookieJar,
     Form(form): Form<CreateEndpointForm>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let create_endpoint = CreateEndpoint {
@@ -77,40 +174,8 @@ pub async fn create_endpoint(
     let endpoints = state.db.get_endpoints().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Vygenerujeme jen list-group část (pro HTMX)
-    let html = if endpoints.is_empty() {
-        r#"<div class="empty">
-            <div class="empty-icon"><i class="ti ti-server-off"></i></div>
-            <p class="empty-title">Žádné endpointy</p>
-        </div>"#.to_string()
-    } else {
-        let items: Vec<String> = endpoints.iter().map(|ep| {
-            format!(r##"<div class="list-group-item">
-                <div class="row align-items-center">
-                    <div class="col-auto">
-                        <span class="avatar"><i class="ti ti-server"></i></span>
-                    </div>
-                    <div class="col">
-                        <div class="text-truncate"><strong>{}</strong></div>
-                        <div class="text-muted"><code>{}</code></div>
-                    </div>
-                    <div class="col-auto">
-                        <div class="btn-list">
-                            <button class="btn btn-sm btn-icon btn-ghost-success" title="Test připojení">
-                                <i class="ti ti-plug-connected"></i>
-                            </button>
-                            <button class="btn btn-sm btn-icon btn-ghost-danger"
-                                onclick="confirmDelete({}, '{}')">
-                                <i class="ti ti-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>"##, ep.name, ep.url, ep.id, ep.name)
-        }).collect();
-
-        format!(r##"<div class="list-group list-group-flush">{}</div>"##, items.join(""))
-    };
+    let active_id = get_active_endpoint(&state, &jar).await.map(|ep| ep.id);
+    let html = render_endpoints_list(&endpoints, active_id);
 
     Ok(Html(html))
 }
@@ -119,6 +184,7 @@ pub async fn create_endpoint(
 pub async fn delete_endpoint(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
+    jar: CookieJar,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     state.db.delete_endpoint(id).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -127,48 +193,8 @@ pub async fn delete_endpoint(
     let endpoints = state.db.get_endpoints().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let html = if endpoints.is_empty() {
-        r##"<div class="empty">
-            <div class="empty-icon"><i class="ti ti-server-off"></i></div>
-            <p class="empty-title">Žádné endpointy</p>
-            <p class="empty-subtitle text-muted">
-                Začněte přidáním vašeho prvního Elasticsearch endpointu
-            </p>
-            <div class="empty-action">
-                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal-endpoint">
-                    <i class="ti ti-plus"></i>
-                    Přidat endpoint
-                </button>
-            </div>
-        </div>"##.to_string()
-    } else {
-        let items: Vec<String> = endpoints.iter().map(|ep| {
-            format!(r##"<div class="list-group-item">
-                <div class="row align-items-center">
-                    <div class="col-auto">
-                        <span class="avatar"><i class="ti ti-server"></i></span>
-                    </div>
-                    <div class="col">
-                        <div class="text-truncate"><strong>{}</strong></div>
-                        <div class="text-muted"><code>{}</code></div>
-                    </div>
-                    <div class="col-auto">
-                        <div class="btn-list">
-                            <button class="btn btn-sm btn-icon btn-ghost-success" title="Test připojení">
-                                <i class="ti ti-plug-connected"></i>
-                            </button>
-                            <button class="btn btn-sm btn-icon btn-ghost-danger"
-                                onclick="confirmDelete({}, '{}')">
-                                <i class="ti ti-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>"##, ep.name, ep.url, ep.id, ep.name)
-        }).collect();
-
-        format!(r##"<div class="list-group list-group-flush">{}</div>"##, items.join(""))
-    };
+    let active_id = get_active_endpoint(&state, &jar).await.map(|ep| ep.id);
+    let html = render_endpoints_list(&endpoints, active_id);
 
     Ok(Html(html))
 }

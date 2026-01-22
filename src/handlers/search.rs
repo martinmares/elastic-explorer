@@ -89,6 +89,29 @@ impl SearchResultsData {
     }
 }
 
+fn normalize_index_pattern(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return "*".to_string();
+    }
+    let normalized = trimmed.replace(" OR ", ",")
+        .replace(" or ", ",")
+        .replace(" Or ", ",")
+        .replace(" oR ", ",")
+        .replace("OR", ",")
+        .replace("or", ",");
+    let parts: Vec<&str> = normalized
+        .split(',')
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty())
+        .collect();
+    if parts.is_empty() {
+        "*".to_string()
+    } else {
+        parts.join(",")
+    }
+}
+
 /// GET /search - Zobrazí vyhledávací formulář a výsledky
 pub async fn search_page(
     State(state): State<Arc<AppState>>,
@@ -116,7 +139,9 @@ pub async fn search_page(
         }
 
     // Pokud stále není zadán index pattern (ani v query ani v cookie), zobraz jen prázdný formulář
-    if query.index_pattern.is_empty() {
+    query.index_pattern = normalize_index_pattern(&query.index_pattern);
+
+    if query.index_pattern.is_empty() || query.index_pattern == "*" {
         let template = SearchTemplate {
             ctx,
             data: None,
