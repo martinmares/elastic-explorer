@@ -10,7 +10,7 @@ use std::str::FromStr;
 use base64::Engine;
 
 use crate::config;
-use crate::db::models::{CreateEndpoint, Endpoint, SavedQuery, ConsoleHistory, CreateConsoleHistory};
+use crate::db::models::{CreateEndpoint, Endpoint, UpdateEndpoint, SavedQuery, ConsoleHistory, CreateConsoleHistory};
 
 pub struct Database {
     pool: SqlitePool,
@@ -161,6 +161,42 @@ impl Database {
             .context("Failed to delete endpoint")?;
 
         tracing::info!("Deleted endpoint: {}", id);
+        Ok(())
+    }
+
+    /// Aktualizuje endpoint
+    pub async fn update_endpoint(&self, id: i64, endpoint: UpdateEndpoint) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let name = endpoint.name.context("Missing endpoint name")?;
+        let url = endpoint.url.context("Missing endpoint url")?;
+        let insecure = endpoint.insecure.context("Missing endpoint insecure flag")?;
+
+        sqlx::query(
+            "UPDATE endpoints
+             SET name = ?, url = ?, insecure = ?, username = ?, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?"
+        )
+        .bind(name)
+        .bind(url)
+        .bind(insecure)
+        .bind(endpoint.username)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .context("Failed to update endpoint")?;
+
+        if let Some(password) = endpoint.password {
+            let encrypted = self.encrypt_password(&password)?;
+            sqlx::query("UPDATE endpoints SET password_encrypted = ? WHERE id = ?")
+                .bind(&encrypted)
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .context("Failed to update endpoint password")?;
+        }
+
+        tx.commit().await?;
+        tracing::info!("Updated endpoint: {}", id);
         Ok(())
     }
 

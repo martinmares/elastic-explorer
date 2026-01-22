@@ -10,11 +10,19 @@ use serde::Deserialize;
 use std::sync::Arc;
 use askama::Template;
 
-use crate::db::{Database, models::CreateEndpoint};
+use crate::db::{Database, models::{CreateEndpoint, UpdateEndpoint}};
 use crate::templates::{EndpointsTemplate, PageContext};
 
 pub struct AppState {
     pub db: Database,
+}
+
+fn escape_attr(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: Option<i64>) -> String {
@@ -52,6 +60,7 @@ fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: O
             String::new()
         };
 
+        let username_attr = ep.username.as_deref().unwrap_or("");
         format!(r##"<div class="list-group-item">
                 <div class="row align-items-center">
                     <div class="col-auto">
@@ -76,6 +85,17 @@ fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: O
                                 onclick="event.stopPropagation(); testConnection(event, {}, '{}')"
                                 title="Test connection">
                                 <i class="ti ti-plug-connected"></i>
+                            </button>
+                            <button
+                                class="btn btn-sm btn-icon btn-ghost-primary"
+                                onclick="event.stopPropagation(); openEditEndpoint(this);"
+                                data-endpoint-id="{}"
+                                data-endpoint-name="{}"
+                                data-endpoint-url="{}"
+                                data-endpoint-insecure="{}"
+                                data-endpoint-username="{}"
+                                title="Edit endpoint">
+                                <i class="ti ti-pencil"></i>
                             </button>
                             <button
                                 class="btn btn-sm btn-icon btn-ghost-secondary"
@@ -105,6 +125,11 @@ fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: O
             ep.id,
             ep.name,
             ep.id,
+            escape_attr(&ep.name),
+            escape_attr(&ep.url),
+            ep.insecure,
+            escape_attr(username_attr),
+            ep.id,
             ep.id,
             ep.name
         )
@@ -115,6 +140,15 @@ fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: O
 
 #[derive(Deserialize)]
 pub struct CreateEndpointForm {
+    name: String,
+    url: String,
+    insecure: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateEndpointForm {
     name: String,
     url: String,
     insecure: Option<String>,
@@ -171,6 +205,41 @@ pub async fn create_endpoint(
     }
 
     // Vrátíme aktualizovaný seznam endpointů (pro HTMX swap)
+    let endpoints = state.db.get_endpoints().await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let active_id = get_active_endpoint(&state, &jar).await.map(|ep| ep.id);
+    let html = render_endpoints_list(&endpoints, active_id);
+
+    Ok(Html(html))
+}
+
+/// PUT /endpoints/:id - Aktualizuje endpoint
+pub async fn update_endpoint(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    jar: CookieJar,
+    Form(form): Form<UpdateEndpointForm>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let update_endpoint = UpdateEndpoint {
+        name: Some(form.name),
+        url: Some(form.url),
+        insecure: Some(form.insecure.is_some()),
+        username: if form.username.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
+            None
+        } else {
+            form.username
+        },
+        password: if form.password.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
+            None
+        } else {
+            form.password
+        },
+    };
+
+    state.db.update_endpoint(id, update_endpoint).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
     let endpoints = state.db.get_endpoints().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 

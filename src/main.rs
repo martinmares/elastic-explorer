@@ -68,6 +68,7 @@ async fn main() -> Result<()> {
         .route("/dashboard", get(handlers::dashboard::dashboard))
         .route("/endpoints", get(handlers::endpoints::list_endpoints))
         .route("/endpoints", post(handlers::endpoints::create_endpoint))
+        .route("/endpoints/{id}", axum::routing::put(handlers::endpoints::update_endpoint))
         .route("/endpoints/{id}", delete(handlers::endpoints::delete_endpoint))
         .route("/endpoints/{id}/select", post(handlers::endpoints::select_endpoint))
         .route("/endpoints/{id}/test", post(handlers::endpoints::test_endpoint))
