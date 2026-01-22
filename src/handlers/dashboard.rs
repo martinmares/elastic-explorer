@@ -24,7 +24,7 @@ pub async fn dashboard(
     // Pokud je aktivní endpoint, načti data z ES s timeoutem
     let data = if let Some(ref endpoint) = active_endpoint {
         match tokio::time::timeout(
-            tokio::time::Duration::from_secs(5),
+            tokio::time::Duration::from_secs(30),
             load_dashboard_data(&state, endpoint)
         ).await {
             Ok(Ok(d)) => Some(d),
