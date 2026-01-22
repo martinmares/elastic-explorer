@@ -6,25 +6,16 @@ use std::path::PathBuf;
 
 /// Vrací cestu k application data adresáři dle OS
 pub fn get_app_dir() -> Result<PathBuf> {
-    let base_dir = if cfg!(target_os = "windows") {
-        // Windows: %APPDATA%\elastic-explorer
-        std::env::var("APPDATA")
-            .context("APPDATA environment variable not found")?
-            .into()
-    } else {
-        // Linux/macOS: ~/.elastic-explorer
-        let home = std::env::var("HOME")
-            .context("HOME environment variable not found")?;
-        PathBuf::from(home).join(".elastic-explorer")
-    };
+    let base_dir = dirs::config_dir()
+        .context("Failed to resolve config directory")?
+        .join("elastic-explorer");
 
     Ok(base_dir)
 }
 
 /// Vrací cestu k data adresáři
 pub fn get_data_dir() -> Result<PathBuf> {
-    let data_dir = get_app_dir()?.join("data");
-    Ok(data_dir)
+    get_app_dir()
 }
 
 /// Vrací cestu k SQLite databázi
@@ -77,8 +68,54 @@ pub fn load_or_create_key() -> Result<Vec<u8>> {
     Ok(key.to_vec())
 }
 
+fn legacy_dir() -> Option<PathBuf> {
+    std::env::var("HOME").ok().map(|home| PathBuf::from(home).join(".elastic-explorer"))
+}
+
+fn move_legacy_dir(src: &PathBuf, dst: &PathBuf) -> Result<()> {
+    if !dst.exists() {
+        fs::create_dir_all(dst)
+            .context("Failed to create target config directory")?;
+    }
+
+    for entry in fs::read_dir(src).context("Failed to read legacy config directory")? {
+        let entry = entry.context("Failed to read legacy directory entry")?;
+        let src_path = entry.path();
+        let file_name = entry.file_name();
+        let dst_path = dst.join(file_name);
+
+        if let Err(err) = fs::rename(&src_path, &dst_path) {
+            if src_path.is_dir() {
+                fs::create_dir_all(&dst_path).ok();
+                move_legacy_dir(&src_path, &dst_path).with_context(|| {
+                    format!("Failed to move legacy directory {}", src_path.display())
+                })?;
+                fs::remove_dir(&src_path).ok();
+            } else {
+                fs::copy(&src_path, &dst_path)
+                    .with_context(|| format!("Failed to copy {}", src_path.display()))?;
+                fs::remove_file(&src_path).ok();
+            }
+            tracing::debug!("Legacy move fallback for {}: {}", src_path.display(), err);
+        }
+    }
+
+    Ok(())
+}
+
 /// Inicializuje adresáře (vytvoří je pokud neexistují)
 pub fn init_directories() -> Result<()> {
+    if let Some(legacy_dir) = legacy_dir() {
+        let app_dir = get_app_dir()?;
+        if legacy_dir.exists() && legacy_dir != app_dir {
+            move_legacy_dir(&legacy_dir, &app_dir)?;
+            if fs::read_dir(&legacy_dir).map(|mut i| i.next().is_none()).unwrap_or(false) {
+                fs::remove_dir(&legacy_dir)
+                    .context("Failed to remove legacy config directory")?;
+            }
+        }
+    }
+
     let data_dir = get_data_dir()?;
 
     if !data_dir.exists() {
@@ -105,6 +142,6 @@ mod tests {
     #[test]
     fn test_data_dir_path() {
         let data_dir = get_data_dir().unwrap();
-        assert!(data_dir.to_string_lossy().contains("data"));
+        assert!(data_dir.to_string_lossy().contains("elastic-explorer"));
     }
 }
