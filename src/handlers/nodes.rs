@@ -208,7 +208,7 @@ async fn load_node_metrics(
 ) -> anyhow::Result<NodeMetrics> {
     let password = state.db.get_endpoint_password(endpoint).await;
 
-    let mut client = EsClient::new(
+    let client = EsClient::new(
         endpoint.url.clone(),
         endpoint.insecure,
         endpoint.username.clone(),
