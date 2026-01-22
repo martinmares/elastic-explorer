@@ -34,6 +34,29 @@ fn default_filter() -> String {
     "*".to_string()
 }
 
+fn normalize_index_pattern(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return "*".to_string();
+    }
+    let normalized = trimmed.replace(" OR ", ",")
+        .replace(" or ", ",")
+        .replace(" Or ", ",")
+        .replace(" oR ", ",")
+        .replace("OR", ",")
+        .replace("or", ",");
+    let parts: Vec<&str> = normalized
+        .split(',')
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty())
+        .collect();
+    if parts.is_empty() {
+        "*".to_string()
+    } else {
+        parts.join(",")
+    }
+}
+
 fn default_page() -> usize {
     1
 }
@@ -158,11 +181,7 @@ async fn load_indices_data(
     client.detect_version().await?;
 
     // Zavolej ES API s filtrem
-    let filter = if query.filter.is_empty() {
-        "*".to_string()
-    } else {
-        query.filter.clone()
-    };
+    let filter = normalize_index_pattern(&query.filter);
 
     let path = format!("/_cat/indices/{}?format=json&bytes=b", filter);
     let mut indices: Vec<IndexInfo> = client.get(&path).await?;
@@ -349,6 +368,58 @@ async fn load_index_detail(
     let stats = serde_json::to_string_pretty(&stats_response)
         .ok();
 
+    let stats_index = stats_response.get("indices")
+        .and_then(|v| v.get(index_name))
+        .or_else(|| stats_response.get("_all"))
+        .or_else(|| stats_response.get("indices")
+            .and_then(|v| v.as_object())
+            .and_then(|map| map.values().next()))
+        .unwrap_or(&serde_json::Value::Null);
+
+    let get_u64 = |root: &serde_json::Value, path: &[&str]| -> Option<u64> {
+        let mut current = root;
+        for key in path {
+            current = current.get(*key)?;
+        }
+        current.as_u64()
+    };
+
+    let stats_docs_count = get_u64(stats_index, &["total", "docs", "count"])
+        .or_else(|| get_u64(stats_index, &["primaries", "docs", "count"]));
+    let stats_docs_deleted = get_u64(stats_index, &["total", "docs", "deleted"])
+        .or_else(|| get_u64(stats_index, &["primaries", "docs", "deleted"]));
+    let stats_store_size_bytes = get_u64(stats_index, &["total", "store", "size_in_bytes"]);
+    let stats_pri_store_size_bytes = get_u64(stats_index, &["primaries", "store", "size_in_bytes"]);
+    let stats_segments_count = get_u64(stats_index, &["total", "segments", "count"]);
+    let stats_segments_memory_bytes = get_u64(stats_index, &["total", "segments", "memory_in_bytes"]);
+    let stats_search_query_total = get_u64(stats_index, &["total", "search", "query_total"]);
+    let stats_search_query_time_ms = get_u64(stats_index, &["total", "search", "query_time_in_millis"]);
+    let stats_indexing_total = get_u64(stats_index, &["total", "indexing", "index_total"]);
+    let stats_indexing_time_ms = get_u64(stats_index, &["total", "indexing", "index_time_in_millis"]);
+    let stats_primary_store_ratio = match (stats_pri_store_size_bytes, stats_store_size_bytes) {
+        (Some(primaries), Some(total)) if total > 0 => {
+            Some(((primaries * 100) / total).min(100) as u8)
+        }
+        _ => None,
+    };
+    let stats_deleted_ratio = match (stats_docs_count, stats_docs_deleted) {
+        (Some(count), Some(deleted)) => {
+            let total = count + deleted;
+            if total > 0 {
+                Some(((deleted * 100) / total).min(100) as u8)
+            } else {
+                Some(0)
+            }
+        }
+        _ => None,
+    };
+    let stats_segments_memory_ratio = match (stats_segments_memory_bytes, stats_store_size_bytes) {
+        (Some(segments), Some(total)) if total > 0 => {
+            Some(((segments * 100) / total).min(100) as u8)
+        }
+        _ => None,
+    };
+
     Ok(IndexDetail {
         index_name: index_info.index.clone(),
         health: index_info.health.clone(),
@@ -364,6 +435,19 @@ async fn load_index_detail(
         settings,
         mappings,
         stats,
+        stats_docs_count,
+        stats_docs_deleted,
+        stats_store_size_bytes,
+        stats_pri_store_size_bytes,
+        stats_segments_count,
+        stats_segments_memory_bytes,
+        stats_search_query_total,
+        stats_search_query_time_ms,
+        stats_indexing_total,
+        stats_indexing_time_ms,
+        stats_primary_store_ratio,
+        stats_deleted_ratio,
+        stats_segments_memory_ratio,
     })
 }
 

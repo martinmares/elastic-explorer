@@ -1,6 +1,9 @@
 <!-- Indices table -->
 {% if data.is_none() %}
-<div class="card" id="indices-table">
+<div class="card" id="indices-table"
+     hx-get="/indices/table"
+     hx-trigger="every 10s"
+     hx-swap="outerHTML">
     <div class="card-body">
         <div class="alert alert-warning">
             <h4 class="alert-title">
@@ -16,7 +19,10 @@
 {% else %}
 {% let d = data.as_ref().unwrap() %}
 
-<div class="card" id="indices-table">
+<div class="card" id="indices-table"
+     hx-get="/indices/table?filter={{ d.filter }}&page={{ d.page }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
+     hx-trigger="every 10s"
+     hx-swap="outerHTML">
     <!-- Bulk actions toolbar -->
     <div class="card-header" id="bulk-actions-toolbar" style="display: none;">
         <div class="d-flex align-items-center">

@@ -44,7 +44,7 @@
             <div class="card-body">
                 <div class="row align-items-end g-2">
                     <div class="col">
-                        <label class="form-label">Indices filter (wildcard supports *, ?)</label>
+                        <label class="form-label">Indices filter (wildcard supports *, ?, use OR or comma)</label>
                         <input
                             type="text"
                             class="form-control"
@@ -75,6 +75,15 @@
                         </select>
                     </div>
                     <div class="col-auto">
+                        <label class="form-label">Auto refresh</label>
+                        <select id="indices-refresh-interval" class="form-select">
+                            <option value="5">5s</option>
+                            <option value="10" selected>10s</option>
+                            <option value="30">30s</option>
+                            <option value="off">Off</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
                         <label class="form-check form-switch">
                             <input
                                 class="form-check-input"
@@ -101,7 +110,7 @@
     <div class="col-12">
         <div id="indices-table"
              hx-get="/indices/table?filter={{ d.filter }}&page={{ d.page }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
-             hx-trigger="load"
+             hx-trigger="load, every 10s"
              hx-swap="outerHTML">
             <div class="card">
                 <div class="card-body text-center">
@@ -151,6 +160,7 @@
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 // JavaScript functions for managing indices
 // These functions must be in the main template to survive HTMX updates
@@ -454,6 +464,7 @@ function openIndexDetail(indexName) {
         swap: 'innerHTML'
     }).then(() => {
         console.log('Content loaded, showing modal');
+        initIndexDetailCharts();
         // Show modal with explicit backdrop configuration
         const modalElement = document.getElementById('index-detail-modal');
         if (modalElement) {
@@ -470,5 +481,77 @@ function openIndexDetail(indexName) {
         console.error('Failed to load index detail:', err);
     });
 }
+
+function initIndexDetailCharts() {
+    if (!window.Chart) return;
+
+    const gaugeConfig = (value, color) => ({
+        type: 'doughnut',
+        data: {
+            datasets: [{
+                data: [value, 100 - value],
+                backgroundColor: [color, '#e9ecef'],
+                borderWidth: 0,
+            }]
+        },
+        options: {
+            cutout: '75%',
+            responsive: false,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false }
+            }
+        }
+    });
+
+    const primaryCanvas = document.getElementById('primaryShareChart');
+    if (primaryCanvas && primaryCanvas.dataset.value) {
+        const value = parseInt(primaryCanvas.dataset.value, 10) || 0;
+        new Chart(primaryCanvas, gaugeConfig(value, '#206bc4'));
+    }
+
+    const deletedCanvas = document.getElementById('deletedDocsChart');
+    if (deletedCanvas && deletedCanvas.dataset.value !== undefined) {
+        const value = parseInt(deletedCanvas.dataset.value, 10) || 0;
+        new Chart(deletedCanvas, gaugeConfig(value, '#f59f00'));
+    }
+
+    const segmentsCanvas = document.getElementById('segmentsMemoryChart');
+    if (segmentsCanvas && segmentsCanvas.dataset.value !== undefined) {
+        const value = parseInt(segmentsCanvas.dataset.value, 10) || 0;
+        new Chart(segmentsCanvas, gaugeConfig(value, '#2fb344'));
+    }
+}
+
+function applyIndicesRefreshInterval(interval) {
+    const table = document.getElementById('indices-table');
+    if (!table || !window.htmx) return;
+
+    if (interval === 'off') {
+        table.removeAttribute('hx-trigger');
+    } else {
+        table.setAttribute('hx-trigger', `every ${interval}s`);
+    }
+
+    window.htmx.process(table);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const select = document.getElementById('indices-refresh-interval');
+    if (select) {
+        applyIndicesRefreshInterval(select.value);
+        select.addEventListener('change', () => applyIndicesRefreshInterval(select.value));
+    }
+});
+
+document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target && evt.detail.target.id === 'indices-table') {
+        const select = document.getElementById('indices-refresh-interval');
+        if (select) {
+            applyIndicesRefreshInterval(select.value);
+        }
+    }
+});
 </script>
 {% endblock %}
