@@ -134,13 +134,18 @@ pub async fn shards_page(
         active_endpoint: active_endpoint.clone(),
     };
 
-    // Vezmi pattern z query, nebo z cookies "indices_filter", nebo default "*"
+    // Vezmi pattern z query, nebo z cookies (per endpoint), nebo default "*"
     let pattern = if !query.pattern.is_empty() {
         query.pattern.clone()
     } else {
-        jar.get("indices_filter")
-            .map(|c| c.value().to_string())
-            .unwrap_or_else(|| "*".to_string())
+        if let Some(ref endpoint) = active_endpoint {
+            let cookie_name = format!("indices_filter_{}", endpoint.id);
+            jar.get(&cookie_name)
+                .map(|c| c.value().to_string())
+                .unwrap_or_else(|| "*".to_string())
+        } else {
+            "*".to_string()
+        }
     };
 
     // Načti data

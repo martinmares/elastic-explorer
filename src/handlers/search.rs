@@ -129,12 +129,21 @@ pub async fn search_page(
 
     // Pokud není zadán index pattern nebo query, zkus načíst z cookie
     let mut query = query;
+    let (pattern_cookie_name, query_cookie_name) = if let Some(ref endpoint) = active_endpoint {
+        (
+            format!("search_index_pattern_{}", endpoint.id),
+            format!("search_query_{}", endpoint.id),
+        )
+    } else {
+        ("search_index_pattern".to_string(), "search_query".to_string())
+    };
+
     if query.index_pattern.is_empty()
-        && let Some(cookie_value) = jar.get("search_index_pattern") {
+        && let Some(cookie_value) = jar.get(&pattern_cookie_name) {
             query.index_pattern = cookie_value.value().to_string();
         }
     if query.query.is_empty()
-        && let Some(cookie_value) = jar.get("search_query") {
+        && let Some(cookie_value) = jar.get(&query_cookie_name) {
             query.query = cookie_value.value().to_string();
         }
 
@@ -153,11 +162,11 @@ pub async fn search_page(
     }
 
     // Ulož index_pattern a query do cookies (platnost 30 dní)
-    let cookie_pattern = Cookie::build(("search_index_pattern", query.index_pattern.clone()))
+    let cookie_pattern = Cookie::build((pattern_cookie_name, query.index_pattern.clone()))
         .path("/")
         .max_age(time::Duration::days(30))
         .build();
-    let cookie_query = Cookie::build(("search_query", query.query.clone()))
+    let cookie_query = Cookie::build((query_cookie_name, query.query.clone()))
         .path("/")
         .max_age(time::Duration::days(30))
         .build();

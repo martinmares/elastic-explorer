@@ -12,6 +12,7 @@ use crate::handlers::endpoints::{AppState, get_active_endpoint};
 use crate::templates::{IndicesTemplate, IndicesTableTemplate, IndexDetailTemplate, PageContext};
 use crate::es::EsClient;
 use crate::models::{IndexInfo, IndicesListData, AliasInfo, IndexDetail};
+use crate::utils::{format_bytes, format_number, parse_size_to_bytes};
 use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
@@ -92,8 +93,9 @@ pub async fn list_indices(
     let endpoint = active_endpoint.as_ref().unwrap();
 
     // Načti filtr z cookies, pokud není zadán v query (použij pouze když je defaultní "*")
+    let filter_cookie_name = format!("indices_filter_{}", endpoint.id);
     if query.filter == "*"
-        && let Some(cookie) = jar.get("indices_filter") {
+        && let Some(cookie) = jar.get(&filter_cookie_name) {
             query.filter = cookie.value().to_string();
         }
 
@@ -135,8 +137,9 @@ pub async fn indices_table(
 
     let endpoint = active_endpoint.as_ref().unwrap();
 
-    // Ulož filtr do cookies
-    let cookie = Cookie::build(("indices_filter", query.filter.clone()))
+    // Ulož filtr do cookies (per endpoint)
+    let filter_cookie_name = format!("indices_filter_{}", endpoint.id);
+    let cookie = Cookie::build((filter_cookie_name, query.filter.clone()))
         .path("/")
         .build();
     let jar = jar.add(cookie);
@@ -162,6 +165,80 @@ pub async fn indices_table(
     template.render()
         .map(|html| (jar, Html(html)))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IndicesMetricsQuery {
+    pub indices: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct IndexMetricsRow {
+    pub index: String,
+    #[serde(rename = "docs.count")]
+    pub docs_count: String,
+    #[serde(rename = "store.size")]
+    pub store_size: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct IndexMetrics {
+    pub docs: String,
+    pub size: String,
+}
+
+/// GET /indices/metrics - Vrátí docs a size pro vybrané indexy
+pub async fn indices_metrics(
+    State(state): State<Arc<AppState>>,
+    jar: CookieJar,
+    Query(query): Query<IndicesMetricsQuery>,
+) -> Result<Json<HashMap<String, IndexMetrics>>, (StatusCode, String)> {
+    let active_endpoint = get_active_endpoint(&state, &jar).await;
+
+    if active_endpoint.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()));
+    }
+
+    let endpoint = active_endpoint.as_ref().unwrap();
+    let indices = query
+        .indices
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>();
+
+    if indices.is_empty() {
+        return Ok(Json(HashMap::new()));
+    }
+
+    let password = state.db.get_endpoint_password(endpoint).await;
+    let client = EsClient::new(
+        endpoint.url.clone(),
+        endpoint.insecure,
+        endpoint.username.clone(),
+        password,
+    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let path = format!(
+        "/_cat/indices/{}?format=json&bytes=b&h=index,docs.count,store.size",
+        indices.join(",")
+    );
+    let rows: Vec<IndexMetricsRow> = client.get(&path).await.unwrap_or_default();
+
+    let mut metrics = HashMap::new();
+    for row in rows {
+        let docs_num = row.docs_count.parse::<u64>().unwrap_or(0);
+        let size_bytes = parse_size_to_bytes(&row.store_size);
+        metrics.insert(
+            row.index,
+            IndexMetrics {
+                docs: format_number(docs_num),
+                size: format_bytes(size_bytes),
+            },
+        );
+    }
+
+    Ok(Json(metrics))
 }
 
 async fn load_indices_data(
