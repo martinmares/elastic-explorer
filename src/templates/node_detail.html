@@ -115,8 +115,9 @@
      hx-swap="none">
     <!-- CPU -->
     <div class="col-md-6 col-lg-3">
-        <div class="card">
-            <div class="card-body">
+        <div class="h-100">
+            <div class="card h-100">
+                <div class="card-body">
                 <div class="subheader">CPU Usage</div>
                 {% if d.cpu_percent.is_some() %}
                 {% let cpu = d.cpu_percent.unwrap() %}
@@ -127,14 +128,16 @@
                 {% else %}
                 <div class="h1 mb-3 text-muted" id="cpuValue">-</div>
                 {% endif %}
+                </div>
             </div>
         </div>
     </div>
 
     <!-- JVM Heap -->
     <div class="col-md-6 col-lg-3">
-        <div class="card">
-            <div class="card-body">
+        <div class="h-100">
+            <div class="card h-100">
+                <div class="card-body">
                 <div class="subheader">JVM Heap</div>
                 {% if d.heap_percent.is_some() %}
                 {% let heap = d.heap_percent.unwrap() %}
@@ -148,14 +151,16 @@
                 {% else %}
                 <div class="h1 mb-3 text-muted">-</div>
                 {% endif %}
+                </div>
             </div>
         </div>
     </div>
 
     <!-- RAM -->
     <div class="col-md-6 col-lg-3">
-        <div class="card">
-            <div class="card-body">
+        <div class="h-100">
+            <div class="card h-100">
+                <div class="card-body">
                 <div class="subheader">RAM Usage</div>
                 {% if d.ram_percent.is_some() %}
                 {% let ram = d.ram_percent.unwrap() %}
@@ -169,14 +174,16 @@
                 {% else %}
                 <div class="h1 mb-3 text-muted">-</div>
                 {% endif %}
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Disk -->
     <div class="col-md-6 col-lg-3">
-        <div class="card">
-            <div class="card-body">
+        <div class="h-100">
+            <div class="card h-100">
+                <div class="card-body">
                 <div class="subheader">Disk Usage</div>
                 {% if d.disk_percent.is_some() %}
                 {% let disk = d.disk_percent.unwrap() %}
@@ -190,8 +197,86 @@
                 {% else %}
                 <div class="h1 mb-3 text-muted">-</div>
                 {% endif %}
+                </div>
             </div>
         </div>
+    </div>
+</div>
+
+<div class="d-flex align-items-center justify-content-between mt-3 mb-2">
+    <div class="text-muted small">Live charts (last 15 minutes)</div>
+    <div class="btn-list">
+        <span class="badge bg-yellow text-dark d-none" id="livePausedBadge">Live paused</span>
+        <button type="button" class="btn btn-sm btn-ghost-secondary" id="toggle-trends-btn">Pause</button>
+        <button type="button" class="btn btn-sm btn-ghost-secondary" id="clear-trends-btn">Clear</button>
+        <button type="button" class="btn btn-sm btn-primary d-none" id="live-trends-btn">Live</button>
+    </div>
+</div>
+
+<div class="row row-cards mt-3">
+    <div class="col-12">
+            <div class="card h-100">
+                <div class="card-header">
+                    <div class="card-title">CPU Trend (10m)</div>
+                </div>
+                <div class="card-body">
+                    <div class="chart-legend mb-2">
+                        <span class="legend-dot" style="background:#4dabf7"></span>
+                        <span class="legend-label">CPU</span>
+                    </div>
+                    <div class="chart">
+                        <canvas id="cpuTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+    </div>
+    <div class="col-12">
+            <div class="card h-100">
+                <div class="card-header">
+                    <div class="card-title">Heap Trend (10m)</div>
+                </div>
+                <div class="card-body">
+                    <div class="chart-legend mb-2">
+                        <span class="legend-dot" style="background:#ffd43b"></span>
+                        <span class="legend-label">Heap</span>
+                    </div>
+                    <div class="chart">
+                        <canvas id="heapTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+    </div>
+    <div class="col-12">
+            <div class="card h-100">
+                <div class="card-header">
+                    <div class="card-title">RAM Trend (10m)</div>
+                </div>
+                <div class="card-body">
+                    <div class="chart-legend mb-2">
+                        <span class="legend-dot" style="background:#69db7c"></span>
+                        <span class="legend-label">RAM</span>
+                    </div>
+                    <div class="chart">
+                        <canvas id="ramTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+    </div>
+    <div class="col-12">
+            <div class="card h-100">
+                <div class="card-header">
+                    <div class="card-title">Disk Trend (10m)</div>
+                </div>
+                <div class="card-body">
+                    <div class="chart-legend mb-2">
+                        <span class="legend-dot" style="background:#ff6b6b"></span>
+                        <span class="legend-label">Disk</span>
+                    </div>
+                    <div class="chart">
+                        <canvas id="diskTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
     </div>
 </div>
 
@@ -202,6 +287,35 @@
 {% if data.is_some() %}
 {% let d = data.as_ref().unwrap() %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+    .chart {
+        width: 100%;
+        height: 240px;
+        background: var(--tblr-body-bg, #0b0f14);
+        border-radius: 6px;
+    }
+    .chart canvas {
+        width: 100% !important;
+        height: 100% !important;
+        display: block;
+    }
+    .chart-legend {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
+    }
+    .legend-label {
+        font-size: 12px;
+        color: #9aa3ab;
+    }
+</style>
 <script>
     // Společná konfigurace pro všechny gauge grafy
     const gaugeConfig = (value, label, color) => ({
@@ -231,8 +345,23 @@
         return '#2fb344'; // green
     };
 
+    if (window.Chart && window.ChartZoom) {
+        Chart.register(window.ChartZoom);
+    }
+
     // Inicializuj grafy a ulož reference
     let cpuChart, heapChart, ramChart, diskChart;
+    let cpuTrend, heapTrend, ramTrend, diskTrend;
+    const historyWindowMs = 10 * 60 * 1000;
+    const maxSamples = 180;
+    let trendsPaused = false;
+    const historyData = {
+        labels: [],
+        cpu: [],
+        heap: [],
+        ram: [],
+        disk: [],
+    };
 
     {% if d.cpu_percent.is_some() %}
     // CPU Chart
@@ -276,6 +405,185 @@
         chart.update('none'); // 'none' mode = bez animace pro rychlý update
     }
 
+    function trimHistory() {
+        const cutoff = Date.now() - historyWindowMs;
+        while (historyData.labels.length > 0 && historyData.labels[0].ts < cutoff) {
+            historyData.labels.shift();
+            historyData.cpu.shift();
+            historyData.heap.shift();
+            historyData.ram.shift();
+            historyData.disk.shift();
+        }
+        while (historyData.labels.length > maxSamples) {
+            historyData.labels.shift();
+            historyData.cpu.shift();
+            historyData.heap.shift();
+            historyData.ram.shift();
+            historyData.disk.shift();
+        }
+    }
+
+    function pushPoint(values) {
+        const now = Date.now();
+        const label = new Date(now).toLocaleTimeString('cs-CZ', {
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+        historyData.labels.push({ ts: now, label });
+        historyData.cpu.push(values.cpu ?? null);
+        historyData.heap.push(values.heap ?? null);
+        historyData.ram.push(values.ram ?? null);
+        historyData.disk.push(values.disk ?? null);
+        trimHistory();
+    }
+
+    function trendConfig(label, color, labels, data) {
+        return {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label,
+                    data,
+                    borderColor: color,
+                    backgroundColor: color,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.35,
+                }],
+            },
+            options: {
+                animation: false,
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        enabled: true,
+                        backgroundColor: '#111418',
+                        borderColor: '#2b3948',
+                        borderWidth: 1,
+                        titleColor: '#e9ecef',
+                        bodyColor: '#e9ecef',
+                    },
+                    zoom: {
+                        zoom: {
+                            wheel: { enabled: true },
+                            pinch: { enabled: true },
+                            mode: 'x',
+                            onZoom: () => setTrendsPaused(true),
+                        },
+                        pan: { enabled: true, mode: 'x' },
+                    },
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.08)' },
+                        ticks: { color: '#9aa3ab' },
+                    },
+                    y: {
+                        min: 0,
+                        grid: { color: 'rgba(255,255,255,0.08)' },
+                        ticks: { color: '#9aa3ab' },
+                    },
+                },
+            },
+        };
+    }
+
+    function initTrendCharts() {
+        const cpuCanvas = document.getElementById('cpuTrendChart');
+        const heapCanvas = document.getElementById('heapTrendChart');
+        const ramCanvas = document.getElementById('ramTrendChart');
+        const diskCanvas = document.getElementById('diskTrendChart');
+
+        if (!cpuCanvas || !heapCanvas || !ramCanvas || !diskCanvas) {
+            return;
+        }
+
+        cpuTrend = new Chart(
+            cpuCanvas,
+            trendConfig('CPU', '#4dabf7', historyData.labels.map(l => l.label), historyData.cpu)
+        );
+        heapTrend = new Chart(
+            heapCanvas,
+            trendConfig('Heap', '#ffd43b', historyData.labels.map(l => l.label), historyData.heap)
+        );
+        ramTrend = new Chart(
+            ramCanvas,
+            trendConfig('RAM', '#69db7c', historyData.labels.map(l => l.label), historyData.ram)
+        );
+        diskTrend = new Chart(
+            diskCanvas,
+            trendConfig('Disk', '#ff6b6b', historyData.labels.map(l => l.label), historyData.disk)
+        );
+    }
+
+    function updateTrendCharts() {
+        const labels = historyData.labels.map(l => l.label);
+        if (!cpuTrend || !heapTrend || !ramTrend || !diskTrend) {
+            return;
+        }
+        if (!cpuTrend.canvas || !cpuTrend.canvas.isConnected) {
+            return;
+        }
+        if (cpuTrend) {
+            cpuTrend.data.labels = labels;
+            cpuTrend.data.datasets[0].data = historyData.cpu;
+            cpuTrend.update('none');
+        }
+        if (heapTrend) {
+            heapTrend.data.labels = labels;
+            heapTrend.data.datasets[0].data = historyData.heap;
+            heapTrend.update('none');
+        }
+        if (ramTrend) {
+            ramTrend.data.labels = labels;
+            ramTrend.data.datasets[0].data = historyData.ram;
+            ramTrend.update('none');
+        }
+        if (diskTrend) {
+            diskTrend.data.labels = labels;
+            diskTrend.data.datasets[0].data = historyData.disk;
+            diskTrend.update('none');
+        }
+    }
+
+    function setTrendsPaused(paused) {
+        trendsPaused = paused;
+        const toggleBtn = document.getElementById('toggle-trends-btn');
+        if (toggleBtn) {
+            toggleBtn.textContent = paused ? 'Resume' : 'Pause';
+        }
+        const badge = document.getElementById('livePausedBadge');
+        const liveBtn = document.getElementById('live-trends-btn');
+        if (badge) {
+            badge.classList.toggle('d-none', !paused);
+        }
+        if (liveBtn) {
+            liveBtn.classList.toggle('d-none', !paused);
+        }
+    }
+
+    function resetZoomAll() {
+        if (cpuTrend?.resetZoom) cpuTrend.resetZoom();
+        if (heapTrend?.resetZoom) heapTrend.resetZoom();
+        if (ramTrend?.resetZoom) ramTrend.resetZoom();
+        if (diskTrend?.resetZoom) diskTrend.resetZoom();
+    }
+
+    function clearTrends() {
+        historyData.cpu = [];
+        historyData.heap = [];
+        historyData.ram = [];
+        historyData.disk = [];
+        updateTrendCharts();
+    }
+
     // HTMX event listener pro update metrics
     document.body.addEventListener('htmx:afterRequest', function(event) {
         // Kontrola zda request byl na metrics endpoint
@@ -308,12 +616,43 @@
                         document.getElementById('diskValue').textContent = metrics.disk_percent + '%';
                         updateChart(diskChart, metrics.disk_percent, 75, 90);
                     }
+                    if (!trendsPaused) {
+                        pushPoint({
+                            cpu: metrics.cpu_percent,
+                            heap: metrics.heap_percent,
+                            ram: metrics.ram_percent,
+                            disk: metrics.disk_percent,
+                        });
+                    }
+
+                    if (!cpuTrend) {
+                        initTrendCharts();
+                    }
+                    updateTrendCharts();
                 } catch (e) {
                     console.error('Failed to parse metrics:', e);
                 }
             }
         }
     });
+
+    initTrendCharts();
+
+    const toggleBtn = document.getElementById('toggle-trends-btn');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => setTrendsPaused(!trendsPaused));
+    }
+    const clearBtn = document.getElementById('clear-trends-btn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => clearTrends());
+    }
+    const liveBtn = document.getElementById('live-trends-btn');
+    if (liveBtn) {
+        liveBtn.addEventListener('click', () => {
+            setTrendsPaused(false);
+            resetZoomAll();
+        });
+    }
 </script>
 {% endif %}
 {% endblock %}
