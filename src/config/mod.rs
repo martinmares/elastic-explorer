@@ -20,7 +20,15 @@ pub fn get_data_dir() -> Result<PathBuf> {
 
 /// Vrací cestu k SQLite databázi
 pub fn get_db_path() -> Result<PathBuf> {
-    let db_path = get_data_dir()?.join("elastic-explorer.db");
+    let data_dir = get_data_dir()?;
+    let db_path = data_dir.join("elastic-explorer.db");
+    if db_path.exists() {
+        return Ok(db_path);
+    }
+    let legacy_path = data_dir.join("data").join("elastic-explorer.db");
+    if legacy_path.exists() {
+        return Ok(legacy_path);
+    }
     Ok(db_path)
 }
 
@@ -125,6 +133,21 @@ pub fn init_directories() -> Result<()> {
     }
 
     let _ = load_or_create_key()?;
+
+    // If legacy data/ exists under new app dir, move DB up one level.
+    let legacy_data_dir = data_dir.join("data");
+    let legacy_db = legacy_data_dir.join("elastic-explorer.db");
+    let target_db = data_dir.join("elastic-explorer.db");
+    if legacy_db.exists() && !target_db.exists() {
+        fs::rename(&legacy_db, &target_db)
+            .context("Failed to move legacy database to app root")?;
+    }
+    if legacy_data_dir.exists() {
+        if fs::read_dir(&legacy_data_dir).map(|mut i| i.next().is_none()).unwrap_or(false) {
+            fs::remove_dir(&legacy_data_dir)
+                .context("Failed to remove legacy data directory")?;
+        }
+    }
 
     Ok(())
 }
