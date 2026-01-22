@@ -38,12 +38,16 @@ pub async fn node_detail(
 
     // Načti data o nodu s timeoutem
     let data = match tokio::time::timeout(
-        tokio::time::Duration::from_secs(5),
+        tokio::time::Duration::from_secs(30),
         load_node_detail(&state, endpoint, &node_id)
     ).await {
         Ok(Ok(d)) => Some(d),
         Ok(Err(e)) => {
-            tracing::error!("Failed to load node detail: {}", e);
+            if e.to_string().contains("Node not found") {
+                tracing::debug!("Node detail not found for: {}", node_id);
+            } else {
+                tracing::error!("Failed to load node detail: {}", e);
+            }
             None
         }
         Err(_) => {
@@ -176,11 +180,15 @@ pub async fn node_metrics(
 
     // Načti pouze metriky s timeoutem
     let metrics = match tokio::time::timeout(
-        tokio::time::Duration::from_secs(5),
+        tokio::time::Duration::from_secs(30),
         load_node_metrics(&state, endpoint, &node_id)
     ).await {
         Ok(Ok(m)) => m,
         Ok(Err(e)) => {
+            if e.to_string().contains("Node not found") {
+                tracing::debug!("Node metrics not found for: {}", node_id);
+                return Err((StatusCode::NOT_FOUND, "Node not found".to_string()));
+            }
             tracing::error!("Failed to load node metrics: {}", e);
             return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
         }
@@ -206,9 +214,6 @@ async fn load_node_metrics(
         endpoint.username.clone(),
         password,
     )?;
-
-    // Detekce verze
-    client.detect_version().await?;
 
     // Získej node stats
     let stats_response: serde_json::Value = client.get(&format!("/_nodes/{}/stats", node_id)).await?;
