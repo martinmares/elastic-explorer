@@ -58,6 +58,7 @@
                             <div class="col" style="cursor: pointer;" onclick="document.getElementById('select-form-{{ endpoint.id }}').submit();">
                                 <div class="text-truncate">
                                     <strong>{{ endpoint.name }}</strong>
+                                    <span class="text-muted small ms-2">(ID {{ endpoint.id }})</span>
                                     {% if ctx.active_endpoint.is_some() && ctx.active_endpoint.as_ref().unwrap().id == endpoint.id %}
                                     <span class="badge bg-green-lt ms-2">Active</span>
                                     {% endif %}
@@ -89,6 +90,17 @@
                                         <i class="ti ti-plug-connected"></i>
                                     </button>
                                     <button
+                                        class="btn btn-sm btn-icon btn-ghost-primary"
+                                        onclick="event.stopPropagation(); openEditEndpoint(this);"
+                                        data-endpoint-id="{{ endpoint.id }}"
+                                        data-endpoint-name="{{ endpoint.name }}"
+                                        data-endpoint-url="{{ endpoint.url }}"
+                                        data-endpoint-insecure="{{ endpoint.insecure }}"
+                                        data-endpoint-username="{{ endpoint.username.as_deref().unwrap_or("") }}"
+                                        title="Edit endpoint">
+                                        <i class="ti ti-pencil"></i>
+                                    </button>
+                                    <button
                                         class="btn btn-sm btn-icon btn-ghost-secondary"
                                         onclick="event.stopPropagation(); document.getElementById('select-form-{{ endpoint.id }}').submit();"
                                         title="Use this endpoint">
@@ -117,10 +129,10 @@
     <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Add Elasticsearch Endpoint</h5>
+                <h5 class="modal-title" id="endpoint-modal-title">Add Elasticsearch Endpoint</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form hx-post="/endpoints" hx-target="#endpoints-list" hx-swap="innerHTML">
+            <form id="endpoint-form" hx-post="/endpoints" hx-target="#endpoints-list" hx-swap="innerHTML">
                 <div class="modal-body">
                     <div id="endpoint-form-error" class="alert alert-danger d-none"></div>
                     <div class="mb-3">
@@ -147,7 +159,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Password</label>
-                        <input type="password" class="form-control" name="password" placeholder="••••••••" autocomplete="current-password">
+                        <input type="password" class="form-control" name="password" placeholder="Leave blank to keep current" autocomplete="current-password">
                         <small class="form-hint">
                             <i class="ti ti-lock"></i>
                             Password will be stored encrypted in local database
@@ -156,7 +168,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary" id="endpoint-submit-btn">
                         <i class="ti ti-check"></i>
                         Save Endpoint
                     </button>
@@ -187,6 +199,46 @@
 <script>
     let deleteEndpointId = null;
 
+    function resetEndpointForm() {
+        const form = document.getElementById('endpoint-form');
+        const title = document.getElementById('endpoint-modal-title');
+        const submitBtn = document.getElementById('endpoint-submit-btn');
+        if (!form || !title || !submitBtn) return;
+
+        form.reset();
+        form.setAttribute('hx-post', '/endpoints');
+        form.removeAttribute('hx-put');
+        if (window.htmx) {
+            window.htmx.process(form);
+        }
+        title.textContent = 'Add Elasticsearch Endpoint';
+        submitBtn.innerHTML = '<i class="ti ti-check"></i> Save Endpoint';
+    }
+
+    function openEditEndpoint(button) {
+        const form = document.getElementById('endpoint-form');
+        const title = document.getElementById('endpoint-modal-title');
+        const submitBtn = document.getElementById('endpoint-submit-btn');
+        if (!form || !title || !submitBtn) return;
+
+        const id = button.dataset.endpointId;
+        form.setAttribute('hx-put', `/endpoints/${id}`);
+        form.removeAttribute('hx-post');
+        if (window.htmx) {
+            window.htmx.process(form);
+        }
+        form.querySelector('[name="name"]').value = button.dataset.endpointName || '';
+        form.querySelector('[name="url"]').value = button.dataset.endpointUrl || '';
+        form.querySelector('[name="insecure"]').checked = button.dataset.endpointInsecure === 'true';
+        form.querySelector('[name="username"]').value = button.dataset.endpointUsername || '';
+        form.querySelector('[name="password"]').value = '';
+        title.textContent = 'Edit Elasticsearch Endpoint';
+        submitBtn.innerHTML = '<i class="ti ti-check"></i> Update Endpoint';
+
+        const modal = new bootstrap.Modal(document.getElementById('modal-endpoint'));
+        modal.show();
+    }
+
     function confirmDelete(id, name) {
         deleteEndpointId = id;
         document.getElementById('delete-endpoint-name').textContent = name;
@@ -214,10 +266,7 @@
             }
 
             // Resetuj formulář
-            const form = modalElement.querySelector('form');
-            if (form) {
-                form.reset();
-            }
+            resetEndpointForm();
 
             const errorBox = document.getElementById('endpoint-form-error');
             if (errorBox) {
@@ -235,6 +284,11 @@
             }, 100);
         }
     });
+
+    const endpointModal = document.getElementById('modal-endpoint');
+    if (endpointModal) {
+        endpointModal.addEventListener('hidden.bs.modal', resetEndpointForm);
+    }
 
     document.body.addEventListener('htmx:beforeRequest', function(evt) {
         const form = document.querySelector('#modal-endpoint form');
