@@ -110,7 +110,7 @@
     <div class="col-12">
         <div id="indices-table"
              hx-get="/indices/table?filter={{ d.filter }}&page={{ d.page }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
-             hx-trigger="load, every 10s"
+             hx-trigger="load"
              hx-swap="outerHTML">
             <div class="card">
                 <div class="card-body text-center">
@@ -524,17 +524,53 @@ function initIndexDetailCharts() {
     }
 }
 
-function applyIndicesRefreshInterval(interval) {
-    const table = document.getElementById('indices-table');
-    if (!table || !window.htmx) return;
+let indicesRefreshTimer = null;
 
-    if (interval === 'off') {
-        table.removeAttribute('hx-trigger');
-    } else {
-        table.setAttribute('hx-trigger', `every ${interval}s`);
+function collectIndexNames() {
+    return Array.from(document.querySelectorAll('tr[data-index-name]'))
+        .map(row => row.dataset.indexName)
+        .filter(Boolean);
+}
+
+async function refreshIndexMetrics() {
+    const indices = collectIndexNames();
+    if (indices.length === 0) return;
+
+    try {
+        const response = await fetch(`/indices/metrics?indices=${encodeURIComponent(indices.join(','))}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        document.querySelectorAll('[data-index-name][data-metric]').forEach((el) => {
+            const indexName = el.dataset.indexName;
+            const metric = el.dataset.metric;
+            const payload = data[indexName];
+            if (!payload) return;
+            if (metric === 'docs' && payload.docs) {
+                el.textContent = payload.docs;
+            }
+            if (metric === 'size' && payload.size) {
+                el.textContent = payload.size;
+            }
+        });
+    } catch (err) {
+        console.debug('Failed to refresh index metrics:', err);
+    }
+}
+
+function applyIndicesRefreshInterval(interval) {
+    if (indicesRefreshTimer) {
+        clearInterval(indicesRefreshTimer);
+        indicesRefreshTimer = null;
     }
 
-    window.htmx.process(table);
+    if (interval === 'off') {
+        return;
+    }
+
+    const seconds = parseInt(interval, 10);
+    if (Number.isNaN(seconds)) return;
+    indicesRefreshTimer = setInterval(refreshIndexMetrics, seconds * 1000);
+    refreshIndexMetrics();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -551,6 +587,7 @@ document.body.addEventListener('htmx:afterSwap', function(evt) {
         if (select) {
             applyIndicesRefreshInterval(select.value);
         }
+        refreshIndexMetrics();
     }
 });
 </script>

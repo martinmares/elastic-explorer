@@ -75,6 +75,7 @@ async fn main() -> Result<()> {
         .route("/nodes/{id}/metrics", get(handlers::nodes::node_metrics))
         .route("/indices", get(handlers::indices::list_indices))
         .route("/indices/table", get(handlers::indices::indices_table))
+        .route("/indices/metrics", get(handlers::indices::indices_metrics))
         .route("/indices/detail/{index_name}", get(handlers::indices::index_detail))
         .route("/indices/bulk/{action}/{index_name}", post(handlers::indices::bulk_operation))
         .route("/search", get(handlers::search::search_page))
