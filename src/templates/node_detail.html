@@ -204,7 +204,7 @@
 </div>
 
 <div class="d-flex align-items-center justify-content-between mt-3 mb-2">
-    <div class="text-muted small">Live charts (last 15 minutes)</div>
+    <div class="text-muted small">Live charts (last 10 minutes)</div>
     <div class="btn-list">
         <span class="badge bg-yellow text-dark d-none" id="livePausedBadge">Live paused</span>
         <button type="button" class="btn btn-sm btn-ghost-secondary" id="toggle-trends-btn">Pause</button>
@@ -356,7 +356,6 @@
     const maxSamples = 180;
     let trendsPaused = false;
     const historyData = {
-        labels: [],
         cpu: [],
         heap: [],
         ram: [],
@@ -407,15 +406,13 @@
 
     function trimHistory() {
         const cutoff = Date.now() - historyWindowMs;
-        while (historyData.labels.length > 0 && historyData.labels[0].ts < cutoff) {
-            historyData.labels.shift();
+        while (historyData.cpu.length > 0 && historyData.cpu[0].x < cutoff) {
             historyData.cpu.shift();
             historyData.heap.shift();
             historyData.ram.shift();
             historyData.disk.shift();
         }
-        while (historyData.labels.length > maxSamples) {
-            historyData.labels.shift();
+        while (historyData.cpu.length > maxSamples) {
             historyData.cpu.shift();
             historyData.heap.shift();
             historyData.ram.shift();
@@ -425,23 +422,17 @@
 
     function pushPoint(values) {
         const now = Date.now();
-        const label = new Date(now).toLocaleTimeString('cs-CZ', {
-            hour: '2-digit',
-            minute: '2-digit',
-        });
-        historyData.labels.push({ ts: now, label });
-        historyData.cpu.push(values.cpu ?? null);
-        historyData.heap.push(values.heap ?? null);
-        historyData.ram.push(values.ram ?? null);
-        historyData.disk.push(values.disk ?? null);
+        historyData.cpu.push({ x: now, y: values.cpu ?? null });
+        historyData.heap.push({ x: now, y: values.heap ?? null });
+        historyData.ram.push({ x: now, y: values.ram ?? null });
+        historyData.disk.push({ x: now, y: values.disk ?? null });
         trimHistory();
     }
 
-    function trendConfig(label, color, labels, data) {
+    function trendConfig(label, color, data) {
         return {
             type: 'line',
             data: {
-                labels,
                 datasets: [{
                     label,
                     data,
@@ -482,8 +473,18 @@
                 },
                 scales: {
                     x: {
+                        type: 'linear',
                         grid: { color: 'rgba(255,255,255,0.08)' },
-                        ticks: { color: '#9aa3ab' },
+                        ticks: {
+                            color: '#9aa3ab',
+                            callback: (value) => {
+                                const date = new Date(value);
+                                return date.toLocaleTimeString('cs-CZ', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                });
+                            },
+                        },
                     },
                     y: {
                         min: 0,
@@ -507,48 +508,54 @@
 
         cpuTrend = new Chart(
             cpuCanvas,
-            trendConfig('CPU', '#4dabf7', historyData.labels.map(l => l.label), historyData.cpu)
+            trendConfig('CPU', '#4dabf7', historyData.cpu)
         );
         heapTrend = new Chart(
             heapCanvas,
-            trendConfig('Heap', '#ffd43b', historyData.labels.map(l => l.label), historyData.heap)
+            trendConfig('Heap', '#ffd43b', historyData.heap)
         );
         ramTrend = new Chart(
             ramCanvas,
-            trendConfig('RAM', '#69db7c', historyData.labels.map(l => l.label), historyData.ram)
+            trendConfig('RAM', '#69db7c', historyData.ram)
         );
         diskTrend = new Chart(
             diskCanvas,
-            trendConfig('Disk', '#ff6b6b', historyData.labels.map(l => l.label), historyData.disk)
+            trendConfig('Disk', '#ff6b6b', historyData.disk)
         );
     }
 
     function updateTrendCharts() {
-        const labels = historyData.labels.map(l => l.label);
         if (!cpuTrend || !heapTrend || !ramTrend || !diskTrend) {
             return;
         }
         if (!cpuTrend.canvas || !cpuTrend.canvas.isConnected) {
             return;
         }
+        const now = Date.now();
+        const minX = now - historyWindowMs;
+        const maxX = now;
         if (cpuTrend) {
-            cpuTrend.data.labels = labels;
             cpuTrend.data.datasets[0].data = historyData.cpu;
+            cpuTrend.options.scales.x.min = minX;
+            cpuTrend.options.scales.x.max = maxX;
             cpuTrend.update('none');
         }
         if (heapTrend) {
-            heapTrend.data.labels = labels;
             heapTrend.data.datasets[0].data = historyData.heap;
+            heapTrend.options.scales.x.min = minX;
+            heapTrend.options.scales.x.max = maxX;
             heapTrend.update('none');
         }
         if (ramTrend) {
-            ramTrend.data.labels = labels;
             ramTrend.data.datasets[0].data = historyData.ram;
+            ramTrend.options.scales.x.min = minX;
+            ramTrend.options.scales.x.max = maxX;
             ramTrend.update('none');
         }
         if (diskTrend) {
-            diskTrend.data.labels = labels;
             diskTrend.data.datasets[0].data = historyData.disk;
+            diskTrend.options.scales.x.min = minX;
+            diskTrend.options.scales.x.max = maxX;
             diskTrend.update('none');
         }
     }
