@@ -135,7 +135,7 @@
                     </td>
                     <td>
                         <div>
-                            <a href="/search?index_pattern={{ index.index }}&query=*" class="text-primary fw-bold">
+                            <a href="{% if ctx.base_path == "/" %}/search{% else %}{{ ctx.base_path }}/search{% endif %}?index_pattern={{ index.index }}&query=*" class="text-primary fw-bold">
                                 {{ index.index }}
                             </a>
                             <span class="badge bg-blue-lt ms-1">{{ index.status }}</span>
@@ -143,7 +143,7 @@
                         {% if !index.aliases.is_empty() %}
                         <div class="text-muted small mt-1">
                             {% for alias in index.aliases.iter() %}
-                            <a href="/search?index_pattern={{ alias }}&query=*" class="text-muted me-1" style="text-decoration: none;">
+                            <a href="{% if ctx.base_path == "/" %}/search{% else %}{{ ctx.base_path }}/search{% endif %}?index_pattern={{ alias }}&query=*" class="text-muted me-1" style="text-decoration: none;">
                                 <i class="ti ti-arrow-forward"></i> {{ alias }}
                             </a>
                             {% endfor %}
@@ -193,7 +193,7 @@
             {% if d.page > 1 %}
             <li class="page-item">
                 <a class="page-link" href="#"
-                   hx-get="/indices/table?filter={{ d.filter }}&page={{ d.page - 1 }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
+                   hx-get="/indices/table?filter={{ d.filter }}&page={{ d.prev_page() }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
                    hx-target="#indices-table"
                    hx-swap="outerHTML">
                     <i class="ti ti-chevron-left"></i> Previous
@@ -206,7 +206,7 @@
             <li class="page-item active">
                 <span class="page-link">{{ page_num }}</span>
             </li>
-            {% else if page_num == 1 || page_num == d.total_pages || (page_num >= d.page - 2 && page_num <= d.page + 2) %}
+            {% else if page_num == 1 || page_num == d.total_pages || (page_num >= d.window_start() && page_num <= d.window_end()) %}
             <li class="page-item">
                 <a class="page-link" href="#"
                    hx-get="/indices/table?filter={{ d.filter }}&page={{ page_num }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
@@ -215,7 +215,7 @@
                     {{ page_num }}
                 </a>
             </li>
-            {% else if page_num == d.page - 3 || page_num == d.page + 3 %}
+            {% else if page_num == d.gap_left() || page_num == d.gap_right() %}
             <li class="page-item disabled">
                 <span class="page-link">...</span>
             </li>
@@ -225,7 +225,7 @@
             {% if d.page < d.total_pages %}
             <li class="page-item">
                 <a class="page-link" href="#"
-                   hx-get="/indices/table?filter={{ d.filter }}&page={{ d.page + 1 }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
+                   hx-get="/indices/table?filter={{ d.filter }}&page={{ d.next_page() }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
                    hx-target="#indices-table"
                    hx-swap="outerHTML">
                     Next <i class="ti ti-chevron-right"></i>

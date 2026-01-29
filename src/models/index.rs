@@ -69,6 +69,31 @@ impl IndicesListData {
     pub fn row_offset(&self) -> usize {
         self.page.saturating_sub(1) * self.per_page
     }
+
+    pub fn prev_page(&self) -> usize {
+        if self.page > 1 { self.page - 1 } else { 1 }
+    }
+
+    pub fn next_page(&self) -> usize {
+        if self.page + 1 > self.total_pages { self.total_pages } else { self.page + 1 }
+    }
+
+    pub fn window_start(&self) -> usize {
+        self.page.saturating_sub(2)
+    }
+
+    pub fn window_end(&self) -> usize {
+        self.page + 2
+    }
+
+    pub fn gap_left(&self) -> usize {
+        self.page.saturating_sub(3)
+    }
+
+    pub fn gap_right(&self) -> usize {
+        self.page + 3
+    }
+
     pub fn showing_from(&self) -> usize {
         if self.page == 0 {
             0
