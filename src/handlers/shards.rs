@@ -130,9 +130,7 @@ pub async fn shards_page(
 ) -> Result<Html<String>, (StatusCode, String)> {
     let active_endpoint = get_active_endpoint(&state, &jar).await;
 
-    let ctx = PageContext {
-        active_endpoint: active_endpoint.clone(),
-    };
+    let ctx = PageContext::new(active_endpoint.clone());
 
     // Vezmi pattern z query, nebo z cookies (per endpoint), nebo default "*"
     let pattern = if !query.pattern.is_empty() {
