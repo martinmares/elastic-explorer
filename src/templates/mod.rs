@@ -6,13 +6,15 @@ use crate::db::models::Endpoint;
 pub struct PageContext {
     pub active_endpoint: Option<Endpoint>,
     pub version: &'static str,
+    pub base_path: String,
 }
 
 impl PageContext {
-    pub fn new(active_endpoint: Option<Endpoint>) -> Self {
+    pub fn new(active_endpoint: Option<Endpoint>, base_path: String) -> Self {
         Self {
             active_endpoint,
             version: env!("CARGO_PKG_VERSION"),
+            base_path,
         }
     }
 }

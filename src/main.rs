@@ -33,6 +33,10 @@ struct Args {
     /// Neotvírat prohlížeč automaticky
     #[arg(long = "no-open", alias = "no-browser")]
     no_open: bool,
+
+    /// Base path when running behind reverse proxy (e.g. /elastic-explorer)
+    #[arg(long, default_value = "/")]
+    base_path: String,
 }
 
 #[tokio::main]
@@ -59,10 +63,11 @@ async fn main() -> Result<()> {
     tracing::info!("Database initialized successfully");
 
     // Shared state
-    let state = Arc::new(AppState { db });
+    let base_path = normalize_base_path(&args.base_path);
+    let state = Arc::new(AppState { db, base_path: base_path.clone() });
 
     // Vytvoř axum router
-    let app = Router::new()
+    let router = Router::new()
         .route("/", get(handlers::index))
         .route("/health", get(handlers::health))
         .route("/dashboard", get(handlers::dashboard::dashboard))
@@ -88,16 +93,21 @@ async fn main() -> Result<()> {
         .route("/console/history-table", get(handlers::console::console_history_table))
         .nest_service("/static", ServeDir::new("static"))
         .with_state(state);
+    let app = if base_path == "/" {
+        router
+    } else {
+        Router::new().nest(&base_path, router)
+    };
 
     // Adresa serveru
     let addr = format!("{}:{}", args.host, args.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    tracing::info!("Server listening on http://{}", addr);
+    tracing::info!("Server listening on http://{}{}", addr, base_path);
 
     // Otevři prohlížeč
     if !args.no_open {
-        let url = format!("http://{}", addr);
+        let url = format!("http://{}{}", addr, base_path);
         if let Err(e) = utils::open_browser(&url) {
             tracing::warn!("Failed to open browser: {}", e);
             tracing::info!("Please open {} manually", url);
@@ -109,4 +119,19 @@ async fn main() -> Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+fn normalize_base_path(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() || trimmed == "/" {
+        return "/".to_string();
+    }
+    let mut path = trimmed.to_string();
+    if !path.starts_with('/') {
+        path.insert(0, '/');
+    }
+    while path.ends_with('/') {
+        path.pop();
+    }
+    path
 }
