@@ -40,17 +40,27 @@ fn normalize_index_pattern(input: &str) -> String {
     if trimmed.is_empty() {
         return "*".to_string();
     }
-    let normalized = trimmed.replace(" OR ", ",")
-        .replace(" or ", ",")
-        .replace(" Or ", ",")
-        .replace(" oR ", ",")
-        .replace("OR", ",")
-        .replace("or", ",");
-    let parts: Vec<&str> = normalized
-        .split(',')
-        .map(|part| part.trim())
-        .filter(|part| !part.is_empty())
-        .collect();
+
+    // Support separators: comma or standalone "OR" token (case-insensitive, any whitespace).
+    let mut parts: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for token in trimmed.replace(',', " , ").split_whitespace() {
+        if token == "," || token.eq_ignore_ascii_case("or") {
+            if !current.trim().is_empty() {
+                parts.push(current.trim().to_string());
+                current.clear();
+            }
+            continue;
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(token);
+    }
+    if !current.trim().is_empty() {
+        parts.push(current.trim().to_string());
+    }
+
     if parts.is_empty() {
         "*".to_string()
     } else {
@@ -260,8 +270,18 @@ async fn load_indices_data(
     // Zavolej ES API s filtrem
     let filter = normalize_index_pattern(&query.filter);
 
-    let path = format!("/_cat/indices/{}?format=json&bytes=b", filter);
+    // Pokud je pattern "*", použij prázdný path (všechny indexy)
+    // Jinak přidej pattern do path - Elasticsearch očekává neenkódovaný pattern
+    let path = if filter == "*" {
+        "/_cat/indices?format=json&bytes=b".to_string()
+    } else {
+        // Pattern dej do path BEZ URL encoding - Elasticsearch sám zpracuje wildcards
+        format!("/_cat/indices/{}?format=json&bytes=b", filter)
+    };
+
+    tracing::debug!("Fetching indices with pattern: {}, path: {}", filter, path);
     let mut indices: Vec<IndexInfo> = client.get(&path).await?;
+    tracing::debug!("Received {} indices from Elasticsearch", indices.len());
 
     // Načti aliasy
     let aliases_path = "/_cat/aliases?format=json";
