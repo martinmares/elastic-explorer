@@ -17,6 +17,8 @@ pub struct IndexInfo {
     pub store_size: String,    // celková velikost
     #[serde(rename = "pri.store.size")]
     pub pri_store_size: String, // velikost primary shards
+    #[serde(rename = "creation.date.string")]
+    pub creation_date: Option<String>,
     #[serde(skip)]
     pub aliases: Vec<String>,  // seznam aliasů
 }

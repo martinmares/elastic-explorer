@@ -619,12 +619,29 @@ function applyIndicesRefreshInterval(interval) {
     refreshIndexMetrics();
 }
 
+function formatCreatedDates() {
+    document.querySelectorAll('.index-created').forEach((el) => {
+        const raw = el.dataset.created;
+        if (!raw) {
+            el.textContent = '-';
+            return;
+        }
+        const date = new Date(raw);
+        if (Number.isNaN(date.getTime())) {
+            el.textContent = raw;
+            return;
+        }
+        el.textContent = date.toLocaleDateString();
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const select = document.getElementById('indices-refresh-interval');
     if (select) {
         applyIndicesRefreshInterval(select.value);
         select.addEventListener('change', () => applyIndicesRefreshInterval(select.value));
     }
+    formatCreatedDates();
 
     const summaryBtn = document.getElementById('indices-summary-btn');
     if (summaryBtn) {
@@ -672,6 +689,7 @@ document.body.addEventListener('htmx:afterSwap', function(evt) {
             applyIndicesRefreshInterval(select.value);
         }
         refreshIndexMetrics();
+        formatCreatedDates();
     }
 });
 </script>

@@ -271,9 +271,9 @@ pub async fn indices_summary(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let path = if filter == "*" {
-        "/_cat/indices?format=json&bytes=b".to_string()
+        "/_cat/indices?format=json&bytes=b&h=health,status,index,uuid,pri,rep,docs.count,docs.deleted,store.size,pri.store.size,creation.date.string".to_string()
     } else {
-        format!("/_cat/indices/{}?format=json&bytes=b", filter)
+        format!("/_cat/indices/{}?format=json&bytes=b&h=health,status,index,uuid,pri,rep,docs.count,docs.deleted,store.size,pri.store.size,creation.date.string", filter)
     };
     let mut indices: Vec<IndexInfo> = client.get(&path)
         .await
@@ -441,7 +441,7 @@ pub async fn indices_metrics(
     ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let path = format!(
-        "/_cat/indices/{}?format=json&bytes=b&h=index,docs.count,store.size",
+        "/_cat/indices/{}?format=json&bytes=b&h=index,docs.count,store.size,creation.date.string",
         indices.join(",")
     );
     let rows: Vec<IndexMetricsRow> = client.get(&path).await.unwrap_or_default();
@@ -484,10 +484,10 @@ async fn load_indices_data(
     // Pokud je pattern "*", použij prázdný path (všechny indexy)
     // Jinak přidej pattern do path - Elasticsearch očekává neenkódovaný pattern
     let path = if filter == "*" {
-        "/_cat/indices?format=json&bytes=b".to_string()
+        "/_cat/indices?format=json&bytes=b&h=health,status,index,uuid,pri,rep,docs.count,docs.deleted,store.size,pri.store.size,creation.date.string".to_string()
     } else {
         // Pattern dej do path BEZ URL encoding - Elasticsearch sám zpracuje wildcards
-        format!("/_cat/indices/{}?format=json&bytes=b", filter)
+        format!("/_cat/indices/{}?format=json&bytes=b&h=health,status,index,uuid,pri,rep,docs.count,docs.deleted,store.size,pri.store.size,creation.date.string", filter)
     };
 
     tracing::debug!("Fetching indices with pattern: {}, path: {}", filter, path);
