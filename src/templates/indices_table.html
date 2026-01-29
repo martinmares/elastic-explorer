@@ -118,7 +118,7 @@
                 {% else %}
                 {% for index in d.indices.iter() %}
                 <tr>
-                    <td class="text-muted">{{ (d.page - 1) * d.per_page + loop.index }}</td>
+                    <td class="text-muted">{{ d.row_offset() + loop.index }}</td>
                     <td>
                         <input type="checkbox" class="form-check-input index-checkbox" value="{{ index.index }}" onchange="updateBulkActions()">
                     </td>

@@ -190,6 +190,9 @@ pub async fn list_indices(
 
     let endpoint = active_endpoint.as_ref().unwrap();
 
+    if query.page == 0 {
+        query.page = 1;
+    }
     // Načti filtr z cookies, pokud není zadán v query (použij pouze když je defaultní "*")
     let filter_cookie_name = format!("indices_filter_{}", endpoint.id);
     if query.filter == "*"
@@ -232,7 +235,7 @@ pub async fn list_indices(
 pub async fn indices_table(
     State(state): State<Arc<AppState>>,
     jar: CookieJar,
-    Query(query): Query<IndicesQuery>,
+    Query(mut query): Query<IndicesQuery>,
 ) -> Result<(CookieJar, Html<String>), (StatusCode, String)> {
     let active_endpoint = get_active_endpoint(&state, &jar).await;
 
@@ -241,6 +244,9 @@ pub async fn indices_table(
     }
 
     let endpoint = active_endpoint.as_ref().unwrap();
+    if query.page == 0 {
+        query.page = 1;
+    }
 
     // Ulož filtr + per_page do cookies (per endpoint)
     let filter_cookie_name = format!("indices_filter_{}", endpoint.id);

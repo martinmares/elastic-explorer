@@ -66,6 +66,9 @@ pub struct IndicesListData {
 }
 
 impl IndicesListData {
+    pub fn row_offset(&self) -> usize {
+        self.page.saturating_sub(1) * self.per_page
+    }
     pub fn showing_from(&self) -> usize {
         if self.page == 0 {
             0
