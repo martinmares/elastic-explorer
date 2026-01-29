@@ -94,17 +94,26 @@ fn normalize_index_pattern(input: &str) -> String {
     if trimmed.is_empty() {
         return "*".to_string();
     }
-    let normalized = trimmed.replace(" OR ", ",")
-        .replace(" or ", ",")
-        .replace(" Or ", ",")
-        .replace(" oR ", ",")
-        .replace("OR", ",")
-        .replace("or", ",");
-    let parts: Vec<&str> = normalized
-        .split(',')
-        .map(|part| part.trim())
-        .filter(|part| !part.is_empty())
-        .collect();
+    // Support separators: comma or standalone "OR" token (case-insensitive, any whitespace).
+    let mut parts: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for token in trimmed.replace(',', " , ").split_whitespace() {
+        if token == "," || token.eq_ignore_ascii_case("or") {
+            if !current.trim().is_empty() {
+                parts.push(current.trim().to_string());
+                current.clear();
+            }
+            continue;
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(token);
+    }
+    if !current.trim().is_empty() {
+        parts.push(current.trim().to_string());
+    }
+
     if parts.is_empty() {
         "*".to_string()
     } else {
