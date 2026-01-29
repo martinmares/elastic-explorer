@@ -275,7 +275,8 @@ pub async fn indices_table(
         }
     };
 
-    let template = IndicesTableTemplate { data };
+    let ctx = PageContext::new(active_endpoint, state.base_path.clone());
+    let template = IndicesTableTemplate { ctx, data };
 
     template.render()
         .map(|html| (jar, Html(html)))

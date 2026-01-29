@@ -52,6 +52,7 @@ pub struct IndicesTemplate {
 #[derive(Template)]
 #[template(path = "indices_table.html")]
 pub struct IndicesTableTemplate {
+    pub ctx: PageContext,
     pub data: Option<crate::models::IndicesListData>,
 }
 
