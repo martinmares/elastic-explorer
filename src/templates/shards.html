@@ -138,6 +138,9 @@
                                 <div class="d-flex flex-wrap gap-2">
                                     {% for shard in node.shards.iter() %}
                                     <div class="shard-box p-2 rounded border cursor-pointer"
+                                         data-index="{{ shard.index }}"
+                                         data-shard="{{ shard.shard }}"
+                                         data-prirep="{{ shard.prirep }}"
                                          onclick="openShardDetail('{{ shard.index }}', '{{ shard.shard }}', '{{ shard.prirep }}')"
                                          style="min-width: 150px; background-color: {{ d.generate_index_color(shard.index) }}20; border-color: {{ d.shard_state_color(shard.state) }};">
                                         <div class="d-flex align-items-center justify-content-between mb-1">
@@ -192,7 +195,11 @@
                         </thead>
                         <tbody>
                             {% for shard in d.all_shards.iter() %}
-                            <tr class="cursor-pointer" onclick="openShardDetail('{{ shard.index }}', '{{ shard.shard }}', '{{ shard.prirep }}')">
+                            <tr class="cursor-pointer shard-row"
+                                data-index="{{ shard.index }}"
+                                data-shard="{{ shard.shard }}"
+                                data-prirep="{{ shard.prirep }}"
+                                onclick="openShardDetail('{{ shard.index }}', '{{ shard.shard }}', '{{ shard.prirep }}')">
                                 <td>
                                     {% let bg_color = d.generate_index_color(shard.index) %}
                                     <span class="badge" style="background-color: {{ bg_color }}; color: {{ d.get_text_color(bg_color) }};">
@@ -306,6 +313,17 @@
     </div>
 </div>
 
+<style>
+    .shard-box,
+    .shard-row {
+        transition: background-color 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+    }
+    .shard-highlight {
+        background-color: rgba(13, 110, 253, 0.22) !important;
+        box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.35);
+        border-color: rgba(13, 110, 253, 0.6) !important;
+    }
+</style>
 <script>
 function openShardDetail(index, shard, prirep) {
     {% if data.is_some() %}
@@ -362,6 +380,31 @@ function openShardDetail(index, shard, prirep) {
     alert('Data nejsou k dispozici');
     {% endif %}
 }
+
+function highlightShardGroup(index, shard) {
+    const selector = `[data-index="${CSS.escape(index)}"][data-shard="${CSS.escape(shard)}"]`;
+    document.querySelectorAll(selector).forEach(el => el.classList.add('shard-highlight'));
+}
+
+function clearShardHighlights() {
+    document.querySelectorAll('.shard-highlight').forEach(el => el.classList.remove('shard-highlight'));
+}
+
+document.addEventListener('mouseover', (event) => {
+    const target = event.target.closest('.shard-box, .shard-row');
+    if (!target) return;
+    const index = target.dataset.index;
+    const shard = target.dataset.shard;
+    if (!index || shard === undefined) return;
+    clearShardHighlights();
+    highlightShardGroup(index, shard);
+});
+
+document.addEventListener('mouseout', (event) => {
+    const target = event.target.closest('.shard-box, .shard-row');
+    if (!target) return;
+    clearShardHighlights();
+});
 </script>
 
 {% endblock %}
