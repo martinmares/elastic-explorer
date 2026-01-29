@@ -135,7 +135,7 @@ fn parse_pattern_expression(input: &str) -> (Vec<String>, Vec<String>) {
         if token == "," || token.eq_ignore_ascii_case("or") || token.eq_ignore_ascii_case("and") {
             continue;
         }
-        if token.eq_ignore_ascii_case("not") {
+        if token.eq_ignore_ascii_case("not") || token == "-" {
             neg_next = true;
             continue;
         }
