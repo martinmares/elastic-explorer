@@ -122,6 +122,33 @@ fn matches_pattern(index_name: &str, pattern: &str) -> bool {
     true
 }
 
+fn split_patterns(input: &str) -> Vec<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() || trimmed == "*" {
+        return Vec::new();
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for token in trimmed.replace(',', " , ").split_whitespace() {
+        if token == "," || token.eq_ignore_ascii_case("or") {
+            if !current.trim().is_empty() {
+                parts.push(current.trim().to_string());
+                current.clear();
+            }
+            continue;
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(token);
+    }
+    if !current.trim().is_empty() {
+        parts.push(current.trim().to_string());
+    }
+    parts
+}
+
 /// GET /shards - Zobrazí stránku se shardy
 pub async fn shards_page(
     State(state): State<Arc<AppState>>,
@@ -208,12 +235,19 @@ async fn load_shards_data(
         for item in arr {
             let index_name = item["index"].as_str().unwrap_or("").to_string();
 
-            // Pokud pattern není "*" nebo prázdný, filtruj podle něj
-            // Pattern může obsahovat wildcards jako "*audit*"
-            if pattern != "*" && !pattern.is_empty()
-                && !matches_pattern(&index_name, pattern) {
+            let patterns = split_patterns(pattern);
+            if !patterns.is_empty() {
+                let mut matched = false;
+                for pat in &patterns {
+                    if matches_pattern(&index_name, pat) {
+                        matched = true;
+                        break;
+                    }
+                }
+                if !matched {
                     continue;
                 }
+            }
 
             shards.push(ShardInfo {
                 index: index_name,
