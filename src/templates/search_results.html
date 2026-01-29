@@ -64,7 +64,7 @@
                             <th style="width: 200px;">Index</th>
                             <th style="width: 250px;">Document ID</th>
                             <th style="width: 80px;">Score</th>
-                            <th>Source Preview</th>
+                            <th style="width: 420px;">Source Preview</th>
                             <th style="width: 80px;">Actions</th>
                         </tr>
                     </thead>
@@ -92,7 +92,9 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <span class="text-muted small font-monospace">{{ hit.source_preview() }}</span>
+                                <span class="text-muted small font-monospace text-truncate d-inline-block" style="max-width: 420px;">
+                                    {{ hit.source_preview() }}
+                                </span>
                             </td>
                             <td>
                                 <button class="btn btn-sm btn-icon btn-ghost-primary"
