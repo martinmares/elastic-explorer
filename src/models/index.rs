@@ -67,10 +67,17 @@ pub struct IndicesListData {
 
 impl IndicesListData {
     pub fn showing_from(&self) -> usize {
-        (self.page - 1) * self.per_page + 1
+        if self.page == 0 {
+            0
+        } else {
+            (self.page - 1) * self.per_page + 1
+        }
     }
 
     pub fn showing_to(&self) -> usize {
+        if self.page == 0 {
+            return 0;
+        }
         let end = (self.page - 1) * self.per_page + self.indices.len();
         end.min(self.total)
     }
