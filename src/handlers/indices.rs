@@ -196,6 +196,13 @@ pub async fn list_indices(
         && let Some(cookie) = jar.get(&filter_cookie_name) {
             query.filter = cookie.value().to_string();
         }
+    let per_page_cookie_name = format!("indices_per_page_{}", endpoint.id);
+    if query.per_page == default_per_page()
+        && let Some(cookie) = jar.get(&per_page_cookie_name) {
+            if let Ok(value) = cookie.value().parse::<usize>() {
+                query.per_page = value;
+            }
+        }
 
     // Načti data s timeoutem
     let data = match tokio::time::timeout(
@@ -213,7 +220,7 @@ pub async fn list_indices(
         }
     };
 
-    let ctx = PageContext::new(active_endpoint);
+    let ctx = PageContext::new(active_endpoint, state.base_path.clone());
     let template = IndicesTemplate { ctx, data };
 
     template.render()
@@ -235,12 +242,16 @@ pub async fn indices_table(
 
     let endpoint = active_endpoint.as_ref().unwrap();
 
-    // Ulož filtr do cookies (per endpoint)
+    // Ulož filtr + per_page do cookies (per endpoint)
     let filter_cookie_name = format!("indices_filter_{}", endpoint.id);
-    let cookie = Cookie::build((filter_cookie_name, query.filter.clone()))
+    let filter_cookie = Cookie::build((filter_cookie_name, query.filter.clone()))
         .path("/")
         .build();
-    let jar = jar.add(cookie);
+    let per_page_cookie_name = format!("indices_per_page_{}", endpoint.id);
+    let per_page_cookie = Cookie::build((per_page_cookie_name, query.per_page.to_string()))
+        .path("/")
+        .build();
+    let jar = jar.add(filter_cookie).add(per_page_cookie);
 
     // Načti data s timeoutem
     let data = match tokio::time::timeout(

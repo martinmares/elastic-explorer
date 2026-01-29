@@ -51,6 +51,7 @@
         <table class="table table-vcenter card-table table-striped">
             <thead>
                 <tr>
+                    <th style="width: 60px;">#</th>
                     <th style="width: 40px;">
                         <input type="checkbox" id="select-all-indices" class="form-check-input" onchange="toggleSelectAll(this)">
                     </th>
@@ -106,7 +107,7 @@
             <tbody>
                 {% if d.indices.is_empty() %}
                 <tr>
-                    <td colspan="8" class="text-center text-muted">
+                    <td colspan="9" class="text-center text-muted">
                         <div class="empty-icon">
                             <i class="ti ti-database-off"></i>
                         </div>
@@ -117,6 +118,7 @@
                 {% else %}
                 {% for index in d.indices.iter() %}
                 <tr>
+                    <td class="text-muted">{{ (d.page - 1) * d.per_page + loop.index }}</td>
                     <td>
                         <input type="checkbox" class="form-check-input index-checkbox" value="{{ index.index }}" onchange="updateBulkActions()">
                     </td>
@@ -182,12 +184,12 @@
     </div>
 
     <!-- Pagination -->
-    {% if d.total_pages > 1 %}
     <div class="card-footer d-flex align-items-center">
         <p class="m-0 text-muted">
-            Showing {{ d.showing_from() }} - {{ d.showing_to() }} of {{ d.total }}
+            Showing {{ d.showing_from() }} - {{ d.showing_to() }} of {{ d.total }} ({{ d.total }} indices found)
         </p>
         <ul class="pagination m-0 ms-auto">
+            {% if d.total_pages > 1 %}
             {% if d.page > 1 %}
             <li class="page-item">
                 <a class="page-link" href="#"
@@ -230,8 +232,8 @@
                 </a>
             </li>
             {% endif %}
+            {% endif %}
         </ul>
     </div>
-    {% endif %}
 </div>
 {% endif %}
