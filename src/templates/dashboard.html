@@ -156,7 +156,7 @@
                     </thead>
                     <tbody>
                         {% for node in d.nodes.iter() %}
-                        <tr style="cursor: pointer;" onclick="window.location='/nodes/{{ node.id }}'">
+                        <tr style="cursor: pointer;" onclick="window.location='{% if ctx.base_path == "/" %}/nodes/{{ node.id }}{% else %}{{ ctx.base_path }}/nodes/{{ node.id }}{% endif %}'">
                             <td>
                                 <div class="d-flex align-items-center">
                                     <span class="avatar avatar-sm me-2 {% if node.is_master %}bg-yellow{% endif %}">
