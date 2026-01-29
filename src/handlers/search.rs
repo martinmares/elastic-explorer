@@ -89,38 +89,6 @@ impl SearchResultsData {
     }
 }
 
-fn normalize_index_pattern(input: &str) -> String {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return "*".to_string();
-    }
-    // Support separators: comma or standalone "OR" token (case-insensitive, any whitespace).
-    let mut parts: Vec<String> = Vec::new();
-    let mut current = String::new();
-    for token in trimmed.replace(',', " , ").split_whitespace() {
-        if token == "," || token.eq_ignore_ascii_case("or") {
-            if !current.trim().is_empty() {
-                parts.push(current.trim().to_string());
-                current.clear();
-            }
-            continue;
-        }
-        if !current.is_empty() {
-            current.push(' ');
-        }
-        current.push_str(token);
-    }
-    if !current.trim().is_empty() {
-        parts.push(current.trim().to_string());
-    }
-
-    if parts.is_empty() {
-        "*".to_string()
-    } else {
-        parts.join(",")
-    }
-}
-
 fn parse_pattern_expression(input: &str) -> (Vec<String>, Vec<String>) {
     let trimmed = input.trim();
     if trimmed.is_empty() {
