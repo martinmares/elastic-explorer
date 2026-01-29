@@ -44,7 +44,7 @@
             <div class="card-body">
                 <div class="row align-items-end g-2">
                     <div class="col">
-                        <label class="form-label">Indices filter (wildcard supports *, ?, use OR or comma)</label>
+                      <label class="form-label">Indices filter - wildcard supports *, ?, use OR (or ','), use AND NOT (or '-')</label>
                         <input
                             type="text"
                             class="form-control"
@@ -75,12 +75,6 @@
                         </select>
                     </div>
                     <div class="col-auto">
-                        <label class="form-label">Summary</label>
-                        <button type="button" class="btn btn-outline-primary w-100" id="indices-summary-btn">
-                            Search summary
-                        </button>
-                    </div>
-                    <div class="col-auto">
                         <label class="form-label">Auto refresh</label>
                         <select id="indices-refresh-interval" class="form-select">
                             <option value="5">5s</option>
@@ -104,6 +98,7 @@
                                 hx-swap="outerHTML">
                             <span class="form-check-label">Hide internal indices</span>
                         </label>
+                        <a href="#" id="indices-summary-btn" class="d-block mt-1 small text-primary">Search summary</a>
                     </div>
                 </div>
             </div>
