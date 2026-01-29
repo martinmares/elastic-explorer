@@ -31,8 +31,8 @@ struct Args {
     port: u16,
 
     /// Neotvírat prohlížeč automaticky
-    #[arg(long)]
-    no_browser: bool,
+    #[arg(long = "no-open", alias = "no-browser")]
+    no_open: bool,
 }
 
 #[tokio::main]
@@ -95,7 +95,7 @@ async fn main() -> Result<()> {
     tracing::info!("Server listening on http://{}", addr);
 
     // Otevři prohlížeč
-    if !args.no_browser {
+    if !args.no_open {
         let url = format!("http://{}", addr);
         if let Err(e) = utils::open_browser(&url) {
             tracing::warn!("Failed to open browser: {}", e);
