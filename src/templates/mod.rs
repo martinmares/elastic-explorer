@@ -5,11 +5,15 @@ use crate::db::models::Endpoint;
 #[derive(Clone)]
 pub struct PageContext {
     pub active_endpoint: Option<Endpoint>,
+    pub version: &'static str,
 }
 
 impl PageContext {
     pub fn new(active_endpoint: Option<Endpoint>) -> Self {
-        Self { active_endpoint }
+        Self {
+            active_endpoint,
+            version: env!("CARGO_PKG_VERSION"),
+        }
     }
 }
 
