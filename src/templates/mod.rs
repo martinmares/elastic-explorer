@@ -54,6 +54,12 @@ pub struct IndicesTableTemplate {
 }
 
 #[derive(Template)]
+#[template(path = "indices_summary.html")]
+pub struct IndicesSummaryTemplate {
+    pub data: crate::handlers::indices::IndicesSummaryData,
+}
+
+#[derive(Template)]
 #[template(path = "index_detail.html")]
 pub struct IndexDetailTemplate {
     pub data: Option<crate::models::IndexDetail>,

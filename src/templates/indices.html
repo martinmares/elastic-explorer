@@ -75,6 +75,12 @@
                         </select>
                     </div>
                     <div class="col-auto">
+                        <label class="form-label">Summary</label>
+                        <button type="button" class="btn btn-outline-primary w-100" id="indices-summary-btn">
+                            Search summary
+                        </button>
+                    </div>
+                    <div class="col-auto">
                         <label class="form-label">Auto refresh</label>
                         <select id="indices-refresh-interval" class="form-select">
                             <option value="5">5s</option>
@@ -124,6 +130,29 @@
 
 {% endif %}
 
+<!-- Modal for indices summary -->
+<div class="modal modal-blur fade" id="indices-summary-modal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
+        <div class="modal-content shadow-lg">
+            <div class="modal-header">
+                <h5 class="modal-title">Search summary</h5>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-sm btn-ghost-secondary" id="indices-summary-copy-btn" title="Copy names">
+                        <i class="ti ti-copy"></i>
+                    </button>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="indices-summary-content">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="text-muted mt-2">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal for index detail -->
 <div class="modal modal-blur fade" id="index-detail-modal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
@@ -161,6 +190,23 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+    .summary-main-table,
+    .summary-details-table {
+        width: 100%;
+        table-layout: fixed;
+    }
+    .summary-details-table th,
+    .summary-details-table td {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .summary-main-table td:first-child code {
+        white-space: normal;
+        word-break: break-word;
+    }
+</style>
 <script>
 // JavaScript functions for managing indices
 // These functions must be in the main template to survive HTMX updates
@@ -578,6 +624,43 @@ document.addEventListener('DOMContentLoaded', () => {
     if (select) {
         applyIndicesRefreshInterval(select.value);
         select.addEventListener('change', () => applyIndicesRefreshInterval(select.value));
+    }
+
+    const summaryBtn = document.getElementById('indices-summary-btn');
+    if (summaryBtn) {
+        summaryBtn.addEventListener('click', () => {
+            const filterInput = document.getElementById('filter-input');
+            const hideInternal = document.querySelector('[name="hide_internal"]');
+            const filter = filterInput ? filterInput.value : '*';
+            const hideInternalValue = hideInternal && hideInternal.checked ? 'true' : 'false';
+            htmx.ajax('GET', `/indices/summary?filter=${encodeURIComponent(filter)}&hide_internal=${hideInternalValue}`, {
+                target: '#indices-summary-content',
+                swap: 'innerHTML'
+            }).then(() => {
+                const modal = new bootstrap.Modal(document.getElementById('indices-summary-modal'));
+                modal.show();
+            });
+        });
+    }
+
+    const summaryCopyBtn = document.getElementById('indices-summary-copy-btn');
+    if (summaryCopyBtn) {
+        summaryCopyBtn.addEventListener('click', async () => {
+            const nameCells = document.querySelectorAll('#indices-summary-content td:first-child code');
+            const names = Array.from(nameCells)
+                .map(cell => cell.textContent?.trim())
+                .filter(name => name && name.length > 0);
+            if (names.length === 0) return;
+            try {
+                await navigator.clipboard.writeText(names.join('\n'));
+                summaryCopyBtn.innerHTML = '<i class="ti ti-check"></i>';
+                setTimeout(() => {
+                    summaryCopyBtn.innerHTML = '<i class="ti ti-copy"></i>';
+                }, 1200);
+            } catch (err) {
+                console.error('Failed to copy summary names:', err);
+            }
+        });
     }
 });
 

@@ -68,6 +68,49 @@ fn normalize_index_pattern(input: &str) -> String {
     }
 }
 
+fn split_index_patterns(input: &str) -> Vec<String> {
+    let normalized = normalize_index_pattern(input);
+    if normalized == "*" {
+        return Vec::new();
+    }
+    normalized
+        .split(',')
+        .map(|part| part.trim().to_string())
+        .filter(|part| !part.is_empty())
+        .collect()
+}
+
+fn matches_pattern(index_name: &str, pattern: &str) -> bool {
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.is_empty() {
+        return index_name == pattern;
+    }
+
+    let mut current_pos = 0;
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if i == 0 && !pattern.starts_with('*') {
+            if !index_name.starts_with(part) {
+                return false;
+            }
+            current_pos = part.len();
+            continue;
+        }
+        if i == parts.len() - 1 && !pattern.ends_with('*') {
+            return index_name.ends_with(part);
+        }
+        if let Some(pos) = index_name[current_pos..].find(part) {
+            current_pos += pos + part.len();
+        } else {
+            return false;
+        }
+    }
+
+    true
+}
+
 fn default_page() -> usize {
     1
 }
@@ -174,6 +217,174 @@ pub async fn indices_table(
 
     template.render()
         .map(|html| (jar, Html(html)))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+#[derive(Debug, Serialize)]
+pub struct IndicesSummaryRow {
+    pub name: String,
+    pub note: Option<String>,
+    pub indices: Vec<IndicesSummaryIndex>,
+    pub is_alias: bool,
+    pub has_alias_badge: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct IndicesSummaryIndex {
+    pub name: String,
+    pub size: String,
+    pub shards: String,
+    pub replicas: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct IndicesSummaryData {
+    pub rows: Vec<IndicesSummaryRow>,
+    pub filter: String,
+}
+
+/// GET /indices/summary - Vrátí shrnutí indexů a aliasů pro aktuální filtr
+pub async fn indices_summary(
+    State(state): State<Arc<AppState>>,
+    jar: CookieJar,
+    Query(query): Query<IndicesQuery>,
+) -> Result<Html<String>, (StatusCode, String)> {
+    let active_endpoint = get_active_endpoint(&state, &jar).await;
+
+    if active_endpoint.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()));
+    }
+
+    let endpoint = active_endpoint.as_ref().unwrap();
+    let filter = normalize_index_pattern(&query.filter);
+    let patterns = split_index_patterns(&query.filter);
+
+    let password = state.db.get_endpoint_password(endpoint).await;
+    let mut client = EsClient::new(
+        endpoint.url.clone(),
+        endpoint.insecure,
+        endpoint.username.clone(),
+        password,
+    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    client.detect_version().await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let path = if filter == "*" {
+        "/_cat/indices?format=json&bytes=b".to_string()
+    } else {
+        format!("/_cat/indices/{}?format=json&bytes=b", filter)
+    };
+    let mut indices: Vec<IndexInfo> = client.get(&path)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if query.hide_internal {
+        indices.retain(|idx| !idx.index.starts_with('.'));
+    }
+
+    let aliases: Vec<AliasInfo> = client.get("/_cat/aliases?format=json")
+        .await
+        .unwrap_or_default();
+
+    let mut alias_to_indices: HashMap<String, Vec<String>> = HashMap::new();
+    let mut index_to_aliases: HashMap<String, Vec<String>> = HashMap::new();
+    for alias_info in aliases {
+        if query.hide_internal && alias_info.alias.starts_with('.') {
+            continue;
+        }
+        alias_to_indices
+            .entry(alias_info.alias.clone())
+            .or_default()
+            .push(alias_info.index.clone());
+        index_to_aliases
+            .entry(alias_info.index)
+            .or_default()
+            .push(alias_info.alias);
+    }
+
+    let mut rows: Vec<IndicesSummaryRow> = Vec::new();
+    let mut covered_indices: HashMap<String, bool> = HashMap::new();
+    let mut index_lookup: HashMap<String, &IndexInfo> = HashMap::new();
+    for idx in &indices {
+        index_lookup.insert(idx.index.clone(), idx);
+    }
+
+    // 1) aliasy, které matchují pattern (a jejich indexy)
+    let mut matched_aliases: Vec<(String, Vec<String>)> = Vec::new();
+    for (alias, indices_for_alias) in &alias_to_indices {
+        let match_alias = patterns.iter().any(|pat| matches_pattern(alias, pat));
+        if !patterns.is_empty() && !match_alias {
+            continue;
+        }
+        matched_aliases.push((alias.clone(), indices_for_alias.clone()));
+    }
+    matched_aliases.sort_by(|a, b| a.0.cmp(&b.0));
+    for (alias, indices_for_alias) in matched_aliases {
+        let mut details: Vec<IndicesSummaryIndex> = Vec::new();
+        for idx in &indices_for_alias {
+            covered_indices.insert(idx.clone(), true);
+            if let Some(info) = index_lookup.get(idx) {
+                details.push(IndicesSummaryIndex {
+                    name: info.index.clone(),
+                    size: info.store_size_formatted(),
+                    shards: info.pri.clone(),
+                    replicas: info.rep.clone(),
+                });
+            }
+        }
+        details.sort_by(|a, b| a.name.cmp(&b.name));
+        rows.push(IndicesSummaryRow {
+            name: alias,
+            note: None,
+            indices: details,
+            is_alias: true,
+            has_alias_badge: false,
+        });
+    }
+
+    // 2) indexy matchující pattern, které nejsou pokryté aliasy
+    let mut matched_indices: Vec<String> = indices
+        .iter()
+        .map(|idx| idx.index.clone())
+        .collect();
+    matched_indices.sort();
+    for idx_name in matched_indices {
+        if covered_indices.contains_key(&idx_name) {
+            continue;
+        }
+        let aliases = index_to_aliases.get(&idx_name).cloned().unwrap_or_default();
+        let note = if aliases.is_empty() {
+            Some("has no alias".to_string())
+        } else {
+            Some(format!("aliases: {}", aliases.join(", ")))
+        };
+        let mut details: Vec<IndicesSummaryIndex> = Vec::new();
+        if let Some(info) = index_lookup.get(&idx_name) {
+            details.push(IndicesSummaryIndex {
+                name: info.index.clone(),
+                size: info.store_size_formatted(),
+                shards: info.pri.clone(),
+                replicas: info.rep.clone(),
+            });
+        }
+        rows.push(IndicesSummaryRow {
+            name: idx_name,
+            note,
+            indices: details,
+            is_alias: false,
+            has_alias_badge: aliases.is_empty(),
+        });
+    }
+
+    let data = IndicesSummaryData {
+        rows,
+        filter: query.filter.clone(),
+    };
+
+    let template = crate::templates::IndicesSummaryTemplate { data };
+    template.render()
+        .map(Html)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
