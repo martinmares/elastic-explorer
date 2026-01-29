@@ -646,13 +646,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const summaryCopyBtn = document.getElementById('indices-summary-copy-btn');
     if (summaryCopyBtn) {
         summaryCopyBtn.addEventListener('click', async () => {
-            const nameCells = document.querySelectorAll('#indices-summary-content td:first-child code');
+            const nameCells = document.querySelectorAll('#summary-main-table td[data-summary-name]');
             const names = Array.from(nameCells)
-                .map(cell => cell.textContent?.trim())
+                .map(cell => cell.dataset.summaryName?.trim())
                 .filter(name => name && name.length > 0);
-            if (names.length === 0) return;
+            const uniqueNames = Array.from(new Set(names));
+            if (uniqueNames.length === 0) return;
             try {
-                await navigator.clipboard.writeText(names.join('\n'));
+                await navigator.clipboard.writeText(uniqueNames.join('\n'));
                 summaryCopyBtn.innerHTML = '<i class="ti ti-check"></i>';
                 setTimeout(() => {
                     summaryCopyBtn.innerHTML = '<i class="ti ti-copy"></i>';

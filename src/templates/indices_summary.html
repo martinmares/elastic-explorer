@@ -1,5 +1,5 @@
 <div class="table-responsive">
-    <table class="table table-vcenter card-table summary-main-table">
+    <table class="table table-vcenter card-table summary-main-table" id="summary-main-table">
         <colgroup>
             <col style="width: 32%;">
             <col style="width: 68%;">
@@ -18,7 +18,7 @@
             {% else %}
             {% for row in data.rows.iter() %}
             <tr>
-                <td>
+                <td data-summary-name="{{ row.name }}">
                     <code>{{ row.name }}</code>
                     {% if row.has_alias_badge %}
                     <span class="badge bg-blue-lt ms-2">has no alias</span>
