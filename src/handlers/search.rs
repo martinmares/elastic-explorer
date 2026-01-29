@@ -121,6 +121,82 @@ fn normalize_index_pattern(input: &str) -> String {
     }
 }
 
+fn parse_pattern_expression(input: &str) -> (Vec<String>, Vec<String>) {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return (vec!["*".to_string()], Vec::new());
+    }
+
+    let mut includes: Vec<String> = Vec::new();
+    let mut excludes: Vec<String> = Vec::new();
+    let mut neg_next = false;
+
+    for token in trimmed.replace(',', " , ").split_whitespace() {
+        if token == "," || token.eq_ignore_ascii_case("or") || token.eq_ignore_ascii_case("and") {
+            continue;
+        }
+        if token.eq_ignore_ascii_case("not") {
+            neg_next = true;
+            continue;
+        }
+
+        let mut value = token;
+        let mut is_exclude = neg_next;
+        if value.starts_with('-') {
+            is_exclude = true;
+            value = &value[1..];
+        }
+        if value.is_empty() {
+            neg_next = false;
+            continue;
+        }
+
+        if is_exclude {
+            excludes.push(value.to_string());
+        } else {
+            includes.push(value.to_string());
+        }
+        neg_next = false;
+    }
+
+    if includes.is_empty() {
+        includes.push("*".to_string());
+    }
+
+    (includes, excludes)
+}
+
+fn matches_pattern(index_name: &str, pattern: &str) -> bool {
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.is_empty() {
+        return index_name == pattern;
+    }
+
+    let mut current_pos = 0;
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if i == 0 && !pattern.starts_with('*') {
+            if !index_name.starts_with(part) {
+                return false;
+            }
+            current_pos = part.len();
+            continue;
+        }
+        if i == parts.len() - 1 && !pattern.ends_with('*') {
+            return index_name.ends_with(part);
+        }
+        if let Some(pos) = index_name[current_pos..].find(part) {
+            current_pos += pos + part.len();
+        } else {
+            return false;
+        }
+    }
+
+    true
+}
+
 /// GET /search - Zobrazí vyhledávací formulář a výsledky
 pub async fn search_page(
     State(state): State<Arc<AppState>>,
@@ -154,10 +230,10 @@ pub async fn search_page(
             query.query = cookie_value.value().to_string();
         }
 
-    // Pokud stále není zadán index pattern (ani v query ani v cookie), zobraz jen prázdný formulář
-    query.index_pattern = normalize_index_pattern(&query.index_pattern);
+    let (includes, excludes) = parse_pattern_expression(&query.index_pattern);
+    let has_specific_pattern = !(includes.len() == 1 && includes[0] == "*");
 
-    if query.index_pattern.is_empty() || query.index_pattern == "*" {
+    if !has_specific_pattern {
         let template = SearchTemplate {
             ctx,
             data: None,
@@ -217,19 +293,46 @@ pub async fn search_page(
             // Vytvoř upravenou query strukturu s effective_query
             let mut search_query = query.clone();
             search_query.query = effective_query.clone();
+            let mut precomputed: Option<SearchResultsData> = None;
 
-            match tokio::time::timeout(
-                tokio::time::Duration::from_secs(30),
-                perform_search(&state, endpoint, &search_query)
-            ).await {
-                Ok(Ok(d)) => Some(d),
-                Ok(Err(e)) => {
-                    tracing::error!("Failed to perform search: {}", e);
-                    None
+            if !excludes.is_empty() {
+                let resolved = resolve_search_indices(&state, endpoint, &includes, &excludes)
+                    .await
+                    .unwrap_or_default();
+                if resolved.is_empty() {
+                    precomputed = Some(SearchResultsData {
+                        index_pattern: includes.join(","),
+                        query: effective_query.clone(),
+                        total: 0,
+                        took: 0,
+                        hits: vec![],
+                        page: query.page,
+                        per_page: query.per_page,
+                        total_pages: 0,
+                    });
+                } else {
+                    search_query.index_pattern = resolved.join(",");
                 }
-                Err(_) => {
-                    tracing::error!("Timeout performing search");
-                    None
+            } else {
+                search_query.index_pattern = includes.join(",");
+            }
+
+            if let Some(precomputed) = precomputed {
+                Some(precomputed)
+            } else {
+                match tokio::time::timeout(
+                    tokio::time::Duration::from_secs(30),
+                    perform_search(&state, endpoint, &search_query)
+                ).await {
+                    Ok(Ok(d)) => Some(d),
+                    Ok(Err(e)) => {
+                        tracing::error!("Failed to perform search: {}", e);
+                        None
+                    }
+                    Err(_) => {
+                        tracing::error!("Timeout performing search");
+                        None
+                    }
                 }
             }
         }
@@ -325,6 +428,47 @@ async fn perform_search(
         per_page: safe_per_page,
         total_pages,
     })
+}
+
+#[derive(Debug, Deserialize)]
+struct IndexName {
+    pub index: String,
+}
+
+async fn resolve_search_indices(
+    state: &AppState,
+    endpoint: &crate::db::models::Endpoint,
+    includes: &[String],
+    excludes: &[String],
+) -> anyhow::Result<Vec<String>> {
+    let password = state.db.get_endpoint_password(endpoint).await;
+    let client = EsClient::new(
+        endpoint.url.clone(),
+        endpoint.insecure,
+        endpoint.username.clone(),
+        password,
+    )?;
+
+    let include_pattern = if includes.len() == 1 && includes[0] == "*" {
+        "*".to_string()
+    } else {
+        includes.join(",")
+    };
+    let path = if include_pattern == "*" {
+        "/_cat/indices?format=json&h=index".to_string()
+    } else {
+        format!("/_cat/indices/{}?format=json&h=index", include_pattern)
+    };
+    let mut indices: Vec<IndexName> = client.get(&path).await?;
+
+    if !excludes.is_empty() {
+        indices.retain(|idx| !excludes.iter().any(|pat| matches_pattern(&idx.index, pat)));
+    }
+
+    let mut names: Vec<String> = indices.into_iter().map(|idx| idx.index).collect();
+    names.sort();
+    names.dedup();
+    Ok(names)
 }
 
 // === Bulk operations ===

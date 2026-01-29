@@ -68,6 +68,51 @@ fn normalize_index_pattern(input: &str) -> String {
     }
 }
 
+fn parse_pattern_expression(input: &str) -> (Vec<String>, Vec<String>) {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return (vec!["*".to_string()], Vec::new());
+    }
+
+    let mut includes: Vec<String> = Vec::new();
+    let mut excludes: Vec<String> = Vec::new();
+    let mut neg_next = false;
+
+    for token in trimmed.replace(',', " , ").split_whitespace() {
+        if token == "," || token.eq_ignore_ascii_case("or") || token.eq_ignore_ascii_case("and") {
+            continue;
+        }
+        if token.eq_ignore_ascii_case("not") {
+            neg_next = true;
+            continue;
+        }
+
+        let mut value = token;
+        let mut is_exclude = neg_next;
+        if value.starts_with('-') {
+            is_exclude = true;
+            value = &value[1..];
+        }
+        if value.is_empty() {
+            neg_next = false;
+            continue;
+        }
+
+        if is_exclude {
+            excludes.push(value.to_string());
+        } else {
+            includes.push(value.to_string());
+        }
+        neg_next = false;
+    }
+
+    if includes.is_empty() {
+        includes.push("*".to_string());
+    }
+
+    (includes, excludes)
+}
+
 fn split_index_patterns(input: &str) -> Vec<String> {
     let normalized = normalize_index_pattern(input);
     if normalized == "*" {
@@ -256,8 +301,12 @@ pub async fn indices_summary(
     }
 
     let endpoint = active_endpoint.as_ref().unwrap();
-    let filter = normalize_index_pattern(&query.filter);
-    let patterns = split_index_patterns(&query.filter);
+    let (includes, excludes) = parse_pattern_expression(&query.filter);
+    let patterns = if includes.len() == 1 && includes[0] == "*" {
+        Vec::new()
+    } else {
+        includes.clone()
+    };
 
     let password = state.db.get_endpoint_password(endpoint).await;
     let mut client = EsClient::new(
@@ -270,6 +319,11 @@ pub async fn indices_summary(
     client.detect_version().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    let filter = if includes.len() == 1 && includes[0] == "*" {
+        "*".to_string()
+    } else {
+        includes.join(",")
+    };
     let path = if filter == "*" {
         "/_cat/indices?format=json&bytes=b&h=health,status,index,uuid,pri,rep,docs.count,docs.deleted,store.size,pri.store.size,creation.date.string".to_string()
     } else {
@@ -281,6 +335,9 @@ pub async fn indices_summary(
 
     if query.hide_internal {
         indices.retain(|idx| !idx.index.starts_with('.'));
+    }
+    if !excludes.is_empty() {
+        indices.retain(|idx| !excludes.iter().any(|pat| matches_pattern(&idx.index, pat)));
     }
 
     let aliases: Vec<AliasInfo> = client.get("/_cat/aliases?format=json")
@@ -317,7 +374,19 @@ pub async fn indices_summary(
         if !patterns.is_empty() && !match_alias {
             continue;
         }
-        matched_aliases.push((alias.clone(), indices_for_alias.clone()));
+        let filtered_indices: Vec<String> = if excludes.is_empty() {
+            indices_for_alias.clone()
+        } else {
+            indices_for_alias
+                .iter()
+                .filter(|idx| !excludes.iter().any(|pat| matches_pattern(idx, pat)))
+                .cloned()
+                .collect()
+        };
+        if filtered_indices.is_empty() {
+            continue;
+        }
+        matched_aliases.push((alias.clone(), filtered_indices));
     }
     matched_aliases.sort_by(|a, b| a.0.cmp(&b.0));
     for (alias, indices_for_alias) in matched_aliases {
@@ -479,7 +548,12 @@ async fn load_indices_data(
     client.detect_version().await?;
 
     // Zavolej ES API s filtrem
-    let filter = normalize_index_pattern(&query.filter);
+    let (includes, excludes) = parse_pattern_expression(&query.filter);
+    let filter = if includes.len() == 1 && includes[0] == "*" {
+        "*".to_string()
+    } else {
+        includes.join(",")
+    };
 
     // Pokud je pattern "*", použij prázdný path (všechny indexy)
     // Jinak přidej pattern do path - Elasticsearch očekává neenkódovaný pattern
@@ -493,6 +567,10 @@ async fn load_indices_data(
     tracing::debug!("Fetching indices with pattern: {}, path: {}", filter, path);
     let mut indices: Vec<IndexInfo> = client.get(&path).await?;
     tracing::debug!("Received {} indices from Elasticsearch", indices.len());
+
+    if !excludes.is_empty() {
+        indices.retain(|idx| !excludes.iter().any(|pat| matches_pattern(&idx.index, pat)));
+    }
 
     // Načti aliasy
     let aliases_path = "/_cat/aliases?format=json";

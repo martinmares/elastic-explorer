@@ -122,31 +122,43 @@ fn matches_pattern(index_name: &str, pattern: &str) -> bool {
     true
 }
 
-fn split_patterns(input: &str) -> Vec<String> {
+fn split_patterns(input: &str) -> (Vec<String>, Vec<String>) {
     let trimmed = input.trim();
     if trimmed.is_empty() || trimmed == "*" {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
 
-    let mut parts: Vec<String> = Vec::new();
-    let mut current = String::new();
+    let mut includes: Vec<String> = Vec::new();
+    let mut excludes: Vec<String> = Vec::new();
+    let mut neg_next = false;
+
     for token in trimmed.replace(',', " , ").split_whitespace() {
-        if token == "," || token.eq_ignore_ascii_case("or") {
-            if !current.trim().is_empty() {
-                parts.push(current.trim().to_string());
-                current.clear();
-            }
+        if token == "," || token.eq_ignore_ascii_case("or") || token.eq_ignore_ascii_case("and") {
             continue;
         }
-        if !current.is_empty() {
-            current.push(' ');
+        if token.eq_ignore_ascii_case("not") {
+            neg_next = true;
+            continue;
         }
-        current.push_str(token);
+        let mut value = token;
+        let mut is_exclude = neg_next;
+        if value.starts_with('-') {
+            is_exclude = true;
+            value = &value[1..];
+        }
+        if value.is_empty() {
+            neg_next = false;
+            continue;
+        }
+        if is_exclude {
+            excludes.push(value.to_string());
+        } else {
+            includes.push(value.to_string());
+        }
+        neg_next = false;
     }
-    if !current.trim().is_empty() {
-        parts.push(current.trim().to_string());
-    }
-    parts
+
+    (includes, excludes)
 }
 
 /// GET /shards - Zobrazí stránku se shardy
@@ -235,16 +247,21 @@ async fn load_shards_data(
         for item in arr {
             let index_name = item["index"].as_str().unwrap_or("").to_string();
 
-            let patterns = split_patterns(pattern);
-            if !patterns.is_empty() {
+            let (includes, excludes) = split_patterns(pattern);
+            if !includes.is_empty() {
                 let mut matched = false;
-                for pat in &patterns {
+                for pat in &includes {
                     if matches_pattern(&index_name, pat) {
                         matched = true;
                         break;
                     }
                 }
                 if !matched {
+                    continue;
+                }
+            }
+            if !excludes.is_empty() {
+                if excludes.iter().any(|pat| matches_pattern(&index_name, pat)) {
                     continue;
                 }
             }
