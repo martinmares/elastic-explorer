@@ -15,6 +15,7 @@ use crate::templates::{EndpointsTemplate, PageContext};
 
 pub struct AppState {
     pub db: Database,
+    pub base_path: String,
 }
 
 fn escape_attr(value: &str) -> String {
@@ -165,7 +166,7 @@ pub async fn list_endpoints(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let active_endpoint = get_active_endpoint(&state, &jar).await;
-    let ctx = PageContext::new(active_endpoint);
+    let ctx = PageContext::new(active_endpoint, state.base_path.clone());
 
     let template = EndpointsTemplate { endpoints, ctx };
 
@@ -290,8 +291,12 @@ pub async fn select_endpoint(
 
     let jar = jar.add(cookie);
 
-    // Přesměruj na dashboard
-    Ok((jar, Redirect::to("/dashboard")))
+    let target = if state.base_path == "/" {
+        "/dashboard".to_string()
+    } else {
+        format!("{}/dashboard", state.base_path)
+    };
+    Ok((jar, Redirect::to(&target)))
 }
 
 /// Helper funkce - získá aktivní endpoint z cookie

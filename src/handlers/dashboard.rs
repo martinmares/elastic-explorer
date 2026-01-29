@@ -41,7 +41,7 @@ pub async fn dashboard(
         None
     };
 
-    let ctx = PageContext::new(active_endpoint);
+    let ctx = PageContext::new(active_endpoint, state.base_path.clone());
     let template = DashboardTemplate { endpoint_name, ctx, data };
 
     template.render()

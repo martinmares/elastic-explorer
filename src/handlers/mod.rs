@@ -7,13 +7,20 @@ pub mod shards;
 pub mod console;
 
 use axum::{
+    extract::State,
     response::{IntoResponse, Redirect},
     http::StatusCode,
 };
+use std::sync::Arc;
 
 /// Root handler - redirect na dashboard
-pub async fn index() -> impl IntoResponse {
-    Redirect::to("/dashboard")
+pub async fn index(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let base_path = state.base_path.clone();
+    if base_path == "/" {
+        Redirect::to("/dashboard")
+    } else {
+        Redirect::to(&format!("{}/dashboard", base_path))
+    }
 }
 
 /// Health check endpoint

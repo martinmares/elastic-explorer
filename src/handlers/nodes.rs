@@ -56,7 +56,7 @@ pub async fn node_detail(
         }
     };
 
-    let ctx = PageContext::new(active_endpoint);
+    let ctx = PageContext::new(active_endpoint, state.base_path.clone());
     let template = NodeDetailTemplate { ctx, data, node_id };
 
     template.render()
