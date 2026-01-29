@@ -1,6 +1,6 @@
 [package]
 name = "elastic-explorer"
-version = "0.2.0"
+version = "0.2.2"
 edition = "2024"
 
 [dependencies]
@@ -42,6 +42,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
 time = "0.3"
+urlencoding = "2.1"
 
 [profile.release]
 opt-level = 3
