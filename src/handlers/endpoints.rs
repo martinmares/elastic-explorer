@@ -14,8 +14,10 @@ use crate::db::{Database, models::{CreateEndpoint, UpdateEndpoint}};
 use crate::templates::{EndpointsTemplate, PageContext};
 
 pub struct AppState {
-    pub db: Database,
+    pub db: Option<Database>,
     pub base_path: String,
+    pub stateless_endpoint: Option<crate::db::models::Endpoint>,
+    pub stateless_password: Option<String>,
 }
 
 fn escape_attr(value: &str) -> String {
@@ -162,7 +164,27 @@ pub async fn list_endpoints(
     State(state): State<Arc<AppState>>,
     jar: CookieJar,
 ) -> Result<Html<String>, (StatusCode, String)> {
-    let endpoints = state.db.get_endpoints().await
+    if state.db.is_none() {
+        let target = if state.base_path == "/" {
+            "/dashboard".to_string()
+        } else {
+            format!("{}/dashboard", state.base_path)
+        };
+        let html = format!(
+            r#"<div class="empty">
+                <div class="empty-icon"><i class="ti ti-server-off"></i></div>
+                <p class="empty-title">Stateless mode</p>
+                <p class="empty-subtitle text-muted">Endpoints are disabled.</p>
+                <div class="empty-action">
+                    <a href="{}" class="btn btn-primary">Go to dashboard</a>
+                </div>
+            </div>"#,
+            target
+        );
+        return Ok(Html(html));
+    }
+    let db = state.db.as_ref().unwrap();
+    let endpoints = db.get_endpoints().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let active_endpoint = get_active_endpoint(&state, &jar).await;
@@ -181,6 +203,10 @@ pub async fn create_endpoint(
     jar: CookieJar,
     Form(form): Form<CreateEndpointForm>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    if state.db.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "Stateless mode".to_string()));
+    }
+    let db = state.db.as_ref().unwrap();
     let create_endpoint = CreateEndpoint {
         name: form.name,
         url: form.url,
@@ -197,7 +223,7 @@ pub async fn create_endpoint(
         },
     };
 
-    if let Err(e) = state.db.create_endpoint(create_endpoint).await {
+    if let Err(e) = db.create_endpoint(create_endpoint).await {
         tracing::error!("Failed to create endpoint: {}", e);
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -206,7 +232,7 @@ pub async fn create_endpoint(
     }
 
     // Vrátíme aktualizovaný seznam endpointů (pro HTMX swap)
-    let endpoints = state.db.get_endpoints().await
+    let endpoints = db.get_endpoints().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let active_id = get_active_endpoint(&state, &jar).await.map(|ep| ep.id);
@@ -222,6 +248,10 @@ pub async fn update_endpoint(
     jar: CookieJar,
     Form(form): Form<UpdateEndpointForm>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    if state.db.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "Stateless mode".to_string()));
+    }
+    let db = state.db.as_ref().unwrap();
     let update_endpoint = UpdateEndpoint {
         name: Some(form.name),
         url: Some(form.url),
@@ -238,10 +268,10 @@ pub async fn update_endpoint(
         },
     };
 
-    state.db.update_endpoint(id, update_endpoint).await
+    db.update_endpoint(id, update_endpoint).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let endpoints = state.db.get_endpoints().await
+    let endpoints = db.get_endpoints().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let active_id = get_active_endpoint(&state, &jar).await.map(|ep| ep.id);
@@ -256,11 +286,15 @@ pub async fn delete_endpoint(
     Path(id): Path<i64>,
     jar: CookieJar,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    state.db.delete_endpoint(id).await
+    if state.db.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "Stateless mode".to_string()));
+    }
+    let db = state.db.as_ref().unwrap();
+    db.delete_endpoint(id).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Vrátíme aktualizovaný seznam
-    let endpoints = state.db.get_endpoints().await
+    let endpoints = db.get_endpoints().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let active_id = get_active_endpoint(&state, &jar).await.map(|ep| ep.id);
@@ -275,8 +309,12 @@ pub async fn select_endpoint(
     Path(id): Path<i64>,
     jar: CookieJar,
 ) -> Result<(CookieJar, Redirect), (StatusCode, String)> {
+    if state.db.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "Stateless mode".to_string()));
+    }
+    let db = state.db.as_ref().unwrap();
     // Ověř že endpoint existuje
-    let endpoint = state.db.get_endpoint(id).await
+    let endpoint = db.get_endpoint(id).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     if endpoint.is_none() {
@@ -304,12 +342,27 @@ pub async fn get_active_endpoint(
     state: &AppState,
     jar: &CookieJar,
 ) -> Option<crate::db::models::Endpoint> {
+    if let Some(endpoint) = &state.stateless_endpoint {
+        return Some(endpoint.clone());
+    }
+    let db = state.db.as_ref()?;
     let endpoint_id = jar.get("active_endpoint_id")?
         .value()
         .parse::<i64>()
         .ok()?;
 
-    state.db.get_endpoint(endpoint_id).await.ok()?
+    db.get_endpoint(endpoint_id).await.ok()?
+}
+
+pub async fn get_endpoint_password(
+    state: &AppState,
+    endpoint: &crate::db::models::Endpoint,
+) -> Option<String> {
+    if let Some(db) = &state.db {
+        db.get_endpoint_password(endpoint).await
+    } else {
+        state.stateless_password.clone()
+    }
 }
 
 /// POST /endpoints/:id/test - Otestuje připojení k endpointu
@@ -319,8 +372,12 @@ pub async fn test_endpoint(
 ) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
     use crate::es::EsClient;
 
+    if state.db.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "Stateless mode".to_string()));
+    }
+    let db = state.db.as_ref().unwrap();
     // Získej endpoint
-    let endpoint = state.db.get_endpoint(id).await
+    let endpoint = db.get_endpoint(id).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let endpoint = match endpoint {
@@ -329,7 +386,7 @@ pub async fn test_endpoint(
     };
 
     // Získej heslo pokud existuje
-    let password = state.db.get_endpoint_password(&endpoint).await;
+    let password = get_endpoint_password(&state, &endpoint).await;
 
     // Vytvoř ES klienta
     let mut client = EsClient::new(

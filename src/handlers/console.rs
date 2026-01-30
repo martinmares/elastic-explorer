@@ -9,7 +9,7 @@ use std::sync::Arc;
 use askama::Template;
 use serde::{Deserialize, Serialize};
 
-use crate::handlers::endpoints::{AppState, get_active_endpoint};
+use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
 use crate::templates::{ConsoleTemplate, PageContext};
 use crate::es::EsClient;
 use crate::db::models::CreateConsoleHistory;
@@ -91,12 +91,15 @@ pub async fn console_page(
     let ctx = PageContext::new(active_endpoint.clone(), state.base_path.clone());
 
     // Načti historii (poslední 50 záznamů)
-    let history_records = state.db.get_console_history(50, query.endpoint_filter).await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    // Získej všechny endpointy pro mapování ID -> name
-    let endpoints = state.db.get_endpoints().await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let (history_records, endpoints) = if let Some(db) = &state.db {
+        let history = db.get_console_history(50, query.endpoint_filter).await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let endpoints = db.get_endpoints().await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        (history, endpoints)
+    } else {
+        (Vec::new(), Vec::new())
+    };
 
     // Převeď historii na format s endpoint_name
     let history: Vec<ConsoleHistoryWithEndpoint> = history_records
@@ -142,12 +145,15 @@ pub async fn console_history_table(
     Query(query): Query<ConsoleQuery>,
 ) -> Result<Html<String>, (StatusCode, String)> {
     // Načti historii (poslední 50 záznamů)
-    let history_records = state.db.get_console_history(50, query.endpoint_filter).await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    // Získej všechny endpointy pro mapování ID -> name
-    let endpoints = state.db.get_endpoints().await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let (history_records, endpoints) = if let Some(db) = &state.db {
+        let history = db.get_console_history(50, query.endpoint_filter).await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let endpoints = db.get_endpoints().await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        (history, endpoints)
+    } else {
+        (Vec::new(), Vec::new())
+    };
 
     // Převeď historii na format s endpoint_name
     let history: Vec<ConsoleHistoryWithEndpoint> = history_records
@@ -224,7 +230,7 @@ pub async fn execute_request(
         .ok_or((StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()))?;
 
     // Získej heslo
-    let password = state.db.get_endpoint_password(&active_endpoint).await;
+    let password = get_endpoint_password(&state, &active_endpoint).await;
 
     let mut client = EsClient::new(
         active_endpoint.url.clone(),
@@ -316,13 +322,15 @@ pub async fn execute_request(
         response_body: Some(response_body.clone()),
     };
 
-    if let Err(e) = state.db.save_console_history(history_entry).await {
-        tracing::warn!("Failed to save console history: {}", e);
-    }
+    if let Some(db) = &state.db {
+        if let Err(e) = db.save_console_history(history_entry).await {
+            tracing::warn!("Failed to save console history: {}", e);
+        }
 
-    // Cleanup staré záznamy (ponechej pouze 200)
-    if let Err(e) = state.db.cleanup_console_history(200).await {
-        tracing::warn!("Failed to cleanup console history: {}", e);
+        // Cleanup staré záznamy (ponechej pouze 200)
+        if let Err(e) = db.cleanup_console_history(200).await {
+            tracing::warn!("Failed to cleanup console history: {}", e);
+        }
     }
 
     Ok(Json(ExecuteResponse {

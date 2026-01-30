@@ -8,7 +8,7 @@ use std::sync::Arc;
 use askama::Template;
 use serde::Serialize;
 
-use crate::handlers::endpoints::{AppState, get_active_endpoint};
+use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
 use crate::templates::{NodeDetailTemplate, PageContext};
 use crate::es::EsClient;
 use crate::models::NodeDetail;
@@ -69,7 +69,7 @@ async fn load_node_detail(
     endpoint: &crate::db::models::Endpoint,
     node_id: &str,
 ) -> anyhow::Result<NodeDetail> {
-    let password = state.db.get_endpoint_password(endpoint).await;
+    let password = get_endpoint_password(&state, endpoint).await;
 
     let mut client = EsClient::new(
         endpoint.url.clone(),
@@ -206,7 +206,7 @@ async fn load_node_metrics(
     endpoint: &crate::db::models::Endpoint,
     node_id: &str,
 ) -> anyhow::Result<NodeMetrics> {
-    let password = state.db.get_endpoint_password(endpoint).await;
+    let password = get_endpoint_password(&state, endpoint).await;
 
     let client = EsClient::new(
         endpoint.url.clone(),

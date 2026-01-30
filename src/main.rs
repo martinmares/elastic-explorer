@@ -15,6 +15,7 @@ use clap::Parser;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use chrono::Utc;
 
 use handlers::AppState;
 
@@ -37,10 +38,35 @@ struct Args {
     /// Base path when running behind reverse proxy (e.g. /elastic-explorer)
     #[arg(long, default_value = "/")]
     base_path: String,
+
+    /// Stateless mode: no local storage, use single connection from CLI/.env
+    #[arg(long, default_value_t = false)]
+    stateless: bool,
+
+    /// Connection name (shown in UI)
+    #[arg(long, env = "CONF_ES_NAME")]
+    conf_es_name: Option<String>,
+
+    /// Elasticsearch URL (e.g. https://host:9200)
+    #[arg(long, env = "CONF_ES_URL")]
+    conf_es_url: Option<String>,
+
+    /// Elasticsearch username
+    #[arg(long, env = "CONF_ES_USERNAME")]
+    conf_es_username: Option<String>,
+
+    /// Elasticsearch password
+    #[arg(long, env = "CONF_ES_PASSWORD")]
+    conf_es_password: Option<String>,
+
+    /// Allow insecure TLS
+    #[arg(long, env = "CONF_ES_INSECURE", default_value_t = false)]
+    conf_es_insecure: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _ = dotenvy::dotenv();
     // Inicializuj logging
     tracing_subscriber::registry()
         .with(
@@ -55,16 +81,42 @@ async fn main() -> Result<()> {
 
     tracing::info!("Starting Elastic Explorer...");
 
-    // Inicializuj adresáře
-    config::init_directories()?;
-
-    // Inicializuj databázi
-    let db = db::Database::new().await?;
-    tracing::info!("Database initialized successfully");
+    let db = if args.stateless {
+        None
+    } else {
+        // Inicializuj adresáře
+        config::init_directories()?;
+        // Inicializuj databázi
+        let db = db::Database::new().await?;
+        tracing::info!("Database initialized successfully");
+        Some(db)
+    };
 
     // Shared state
     let base_path = normalize_base_path(&args.base_path);
-    let state = Arc::new(AppState { db, base_path: base_path.clone() });
+    let stateless_endpoint = if args.stateless {
+        let url = args.conf_es_url.clone().ok_or_else(|| anyhow::anyhow!("--conf-es-url is required in --stateless mode"))?;
+        let name = args.conf_es_name.clone().unwrap_or_else(|| url.clone());
+        Some(db::models::Endpoint {
+            id: 0,
+            name,
+            url,
+            insecure: args.conf_es_insecure,
+            username: args.conf_es_username.clone(),
+            password_encrypted: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        })
+    } else {
+        None
+    };
+
+    let state = Arc::new(AppState {
+        db,
+        base_path: base_path.clone(),
+        stateless_endpoint,
+        stateless_password: if args.stateless { args.conf_es_password.clone() } else { None },
+    });
 
     // Vytvoř axum router
     let router = Router::new()

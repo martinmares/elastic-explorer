@@ -8,7 +8,7 @@ use std::sync::Arc;
 use askama::Template;
 use serde::{Deserialize, Serialize};
 
-use crate::handlers::endpoints::{AppState, get_active_endpoint};
+use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
 use crate::templates::{IndicesTemplate, IndicesTableTemplate, IndexDetailTemplate, PageContext};
 use crate::es::EsClient;
 use crate::models::{IndexInfo, IndicesListData, AliasInfo, IndexDetail};
@@ -281,7 +281,7 @@ pub async fn indices_summary(
         includes.clone()
     };
 
-    let password = state.db.get_endpoint_password(endpoint).await;
+    let password = get_endpoint_password(&state, endpoint).await;
     let mut client = EsClient::new(
         endpoint.url.clone(),
         endpoint.insecure,
@@ -474,7 +474,7 @@ pub async fn indices_metrics(
         return Ok(Json(HashMap::new()));
     }
 
-    let password = state.db.get_endpoint_password(endpoint).await;
+    let password = get_endpoint_password(&state, endpoint).await;
     let client = EsClient::new(
         endpoint.url.clone(),
         endpoint.insecure,
@@ -509,7 +509,7 @@ async fn load_indices_data(
     endpoint: &crate::db::models::Endpoint,
     query: &IndicesQuery,
 ) -> anyhow::Result<IndicesListData> {
-    let password = state.db.get_endpoint_password(endpoint).await;
+    let password = get_endpoint_password(&state, endpoint).await;
 
     let mut client = EsClient::new(
         endpoint.url.clone(),
@@ -676,7 +676,7 @@ async fn load_index_detail(
     endpoint: &crate::db::models::Endpoint,
     index_name: &str,
 ) -> anyhow::Result<IndexDetail> {
-    let password = state.db.get_endpoint_password(endpoint).await;
+    let password = get_endpoint_password(&state, endpoint).await;
 
     let mut client = EsClient::new(
         endpoint.url.clone(),
@@ -839,7 +839,7 @@ pub async fn bulk_operation(
     }
 
     let endpoint = active_endpoint.as_ref().unwrap();
-    let password = state.db.get_endpoint_password(endpoint).await;
+    let password = get_endpoint_password(&state, endpoint).await;
 
     let mut client = EsClient::new(
         endpoint.url.clone(),

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use askama::Template;
 use serde::{Deserialize, Serialize};
 
-use crate::handlers::endpoints::{AppState, get_active_endpoint};
+use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
 use crate::templates::{SearchTemplate, SearchResultsTemplate, PageContext};
 use crate::es::EsClient;
 
@@ -328,7 +328,7 @@ async fn perform_search(
     endpoint: &crate::db::models::Endpoint,
     query: &SearchQuery,
 ) -> anyhow::Result<SearchResultsData> {
-    let password = state.db.get_endpoint_password(endpoint).await;
+    let password = get_endpoint_password(&state, endpoint).await;
 
     let mut client = EsClient::new(
         endpoint.url.clone(),
@@ -409,7 +409,7 @@ async fn resolve_search_indices(
     includes: &[String],
     excludes: &[String],
 ) -> anyhow::Result<Vec<String>> {
-    let password = state.db.get_endpoint_password(endpoint).await;
+    let password = get_endpoint_password(&state, endpoint).await;
     let client = EsClient::new(
         endpoint.url.clone(),
         endpoint.insecure,
@@ -472,7 +472,7 @@ pub async fn bulk_delete_documents(
         None => return Err((StatusCode::BAD_REQUEST, "No active endpoint".to_string())),
     };
 
-    let password = state.db.get_endpoint_password(&endpoint).await;
+    let password = get_endpoint_password(&state, &endpoint).await;
     let mut client = EsClient::new(
         endpoint.url.clone(),
         endpoint.insecure,

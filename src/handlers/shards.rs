@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use askama::Template;
 use serde::{Deserialize, Serialize};
 
-use crate::handlers::endpoints::{AppState, get_active_endpoint};
+use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
 use crate::templates::{ShardsTemplate, PageContext};
 use crate::es::EsClient;
 use crate::utils::{generate_index_color, shard_state_color, get_text_color_for_background};
@@ -222,7 +222,7 @@ async fn load_shards_data(
     endpoint: &crate::db::models::Endpoint,
     pattern: &str,
 ) -> anyhow::Result<ShardsData> {
-    let password = state.db.get_endpoint_password(endpoint).await;
+    let password = get_endpoint_password(&state, endpoint).await;
 
     let mut client = EsClient::new(
         endpoint.url.clone(),

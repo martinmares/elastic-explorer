@@ -7,7 +7,7 @@ use axum_extra::extract::CookieJar;
 use std::sync::Arc;
 use askama::Template;
 
-use crate::handlers::endpoints::{AppState, get_active_endpoint};
+use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
 use crate::templates::{DashboardTemplate, PageContext};
 use crate::es::EsClient;
 use crate::models::{DashboardData, NodeSummary};
@@ -53,7 +53,7 @@ async fn load_dashboard_data(
     state: &AppState,
     endpoint: &crate::db::models::Endpoint,
 ) -> anyhow::Result<DashboardData> {
-    let password = state.db.get_endpoint_password(endpoint).await;
+    let password = get_endpoint_password(state, endpoint).await;
 
     let mut client = EsClient::new(
         endpoint.url.clone(),
