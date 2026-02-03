@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     response::{Html, Json},
     http::StatusCode,
 };
@@ -428,6 +428,103 @@ pub async fn indices_summary(
     template.render()
         .map(Html)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+#[derive(Debug, Serialize)]
+pub struct IndexAliasesResponse {
+    pub index: String,
+    pub aliases: Vec<String>,
+}
+
+/// GET /indices/{index_name}/aliases - Vrátí aliasy pro index
+pub async fn index_aliases(
+    State(state): State<Arc<AppState>>,
+    jar: CookieJar,
+    Path(index_name): Path<String>,
+) -> Result<Json<IndexAliasesResponse>, (StatusCode, String)> {
+    let active_endpoint = get_active_endpoint(&state, &jar).await;
+    let endpoint = active_endpoint.ok_or_else(|| (StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()))?;
+
+    let password = get_endpoint_password(&state, &endpoint).await;
+    let client = EsClient::new(
+        endpoint.url.clone(),
+        endpoint.insecure,
+        endpoint.username.clone(),
+        password,
+    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let aliases_path = format!("/{}/_alias", index_name);
+    let aliases_response: serde_json::Value = client.get(&aliases_path)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mut alias_names: Vec<String> = Vec::new();
+    if let Some(aliases_map) = aliases_response.get(&index_name)
+        .and_then(|index_obj| index_obj.get("aliases"))
+        .and_then(|aliases_obj| aliases_obj.as_object()) {
+            alias_names = aliases_map.keys().map(|k| k.to_string()).collect();
+    }
+    alias_names.sort();
+
+    Ok(Json(IndexAliasesResponse { index: index_name, aliases: alias_names }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AliasActionRequest {
+    pub action: String, // add | remove | rename
+    pub alias: Option<String>,
+    pub new_alias: Option<String>,
+}
+
+/// POST /indices/{index_name}/aliases - Upraví aliasy pro index
+pub async fn index_alias_action(
+    State(state): State<Arc<AppState>>,
+    jar: CookieJar,
+    Path(index_name): Path<String>,
+    Json(payload): Json<AliasActionRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let active_endpoint = get_active_endpoint(&state, &jar).await;
+    let endpoint = active_endpoint.ok_or_else(|| (StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()))?;
+
+    let password = get_endpoint_password(&state, &endpoint).await;
+    let client = EsClient::new(
+        endpoint.url.clone(),
+        endpoint.insecure,
+        endpoint.username.clone(),
+        password,
+    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let action = payload.action.as_str();
+    let mut actions: Vec<serde_json::Value> = Vec::new();
+
+    match action {
+        "add" => {
+            let alias = payload.alias.clone().filter(|s| !s.is_empty())
+                .ok_or_else(|| (StatusCode::BAD_REQUEST, "Alias is required".to_string()))?;
+            actions.push(serde_json::json!({ "add": { "index": index_name, "alias": alias } }));
+        }
+        "remove" => {
+            let alias = payload.alias.clone().filter(|s| !s.is_empty())
+                .ok_or_else(|| (StatusCode::BAD_REQUEST, "Alias is required".to_string()))?;
+            actions.push(serde_json::json!({ "remove": { "index": index_name, "alias": alias } }));
+        }
+        "rename" => {
+            let alias = payload.alias.clone().filter(|s| !s.is_empty())
+                .ok_or_else(|| (StatusCode::BAD_REQUEST, "Alias is required".to_string()))?;
+            let new_alias = payload.new_alias.clone().filter(|s| !s.is_empty())
+                .ok_or_else(|| (StatusCode::BAD_REQUEST, "New alias is required".to_string()))?;
+            actions.push(serde_json::json!({ "remove": { "index": index_name, "alias": alias } }));
+            actions.push(serde_json::json!({ "add": { "index": index_name, "alias": new_alias } }));
+        }
+        _ => return Err((StatusCode::BAD_REQUEST, "Unsupported action".to_string())),
+    }
+
+    let body = serde_json::json!({ "actions": actions });
+    let _: serde_json::Value = client.post("/_aliases", body)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({ "success": true })))
 }
 
 #[derive(Debug, Deserialize)]

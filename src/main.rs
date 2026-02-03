@@ -136,6 +136,8 @@ async fn main() -> Result<()> {
         .route("/indices/summary", get(handlers::indices::indices_summary))
         .route("/indices/metrics", get(handlers::indices::indices_metrics))
         .route("/indices/detail/{index_name}", get(handlers::indices::index_detail))
+        .route("/indices/{index_name}/aliases", get(handlers::indices::index_aliases))
+        .route("/indices/{index_name}/aliases", post(handlers::indices::index_alias_action))
         .route("/indices/bulk/{action}/{index_name}", post(handlers::indices::bulk_operation))
         .route("/search", get(handlers::search::search_page))
         .route("/search/bulk/delete", post(handlers::search::bulk_delete_documents))

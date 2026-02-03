@@ -184,6 +184,64 @@
     </div>
 </div>
 
+<!-- Modal for alias management -->
+<div class="modal modal-blur fade" id="index-aliases-modal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
+        <div class="modal-content shadow-lg">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit aliases</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Index</label>
+                    <div class="fw-bold" id="alias-index-name"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Aliases</label>
+                    <div id="alias-list" class="list-group list-group-flush"></div>
+                    <div class="text-muted small mt-2" id="alias-empty" style="display: none;">No aliases found</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Add alias</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="alias-new-input" placeholder="alias-name">
+                        <button class="btn btn-primary" type="button" id="alias-add-btn">Add</button>
+                    </div>
+                </div>
+                <div class="text-muted small" id="alias-error" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for alias rename -->
+<div class="modal modal-blur fade" id="alias-rename-modal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
+        <div class="modal-content shadow-lg">
+            <div class="modal-header">
+                <h5 class="modal-title">Rename alias</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Current</label>
+                    <div class="fw-bold" id="alias-rename-current"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">New alias</label>
+                    <input type="text" class="form-control" id="alias-rename-input" placeholder="new-alias">
+                </div>
+                <div class="text-muted small" id="alias-rename-error" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="alias-rename-confirm">Rename</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
     .summary-main-table,
@@ -530,6 +588,135 @@ function openIndexDetail(indexName) {
         console.error('Failed to load index detail:', err);
     });
 }
+
+let currentAliasIndex = null;
+let renameAliasValue = null;
+
+async function openIndexAliases(indexName) {
+    currentAliasIndex = indexName;
+    document.getElementById('alias-index-name').textContent = indexName;
+    document.getElementById('alias-new-input').value = '';
+    document.getElementById('alias-error').style.display = 'none';
+
+    const modal = new bootstrap.Modal(document.getElementById('index-aliases-modal'));
+    modal.show();
+
+    await loadAliases(indexName);
+}
+
+async function loadAliases(indexName) {
+    const list = document.getElementById('alias-list');
+    const empty = document.getElementById('alias-empty');
+    list.innerHTML = '';
+    empty.style.display = 'none';
+
+    try {
+        const response = await fetch(`/indices/${encodeURIComponent(indexName)}/aliases`);
+        const data = await response.json();
+        const aliases = data.aliases || [];
+        if (aliases.length === 0) {
+            empty.style.display = 'block';
+            return;
+        }
+        aliases.forEach((alias) => {
+            const item = document.createElement('div');
+            item.className = 'list-group-item d-flex align-items-center';
+            item.innerHTML = `
+                <code class="me-2">${alias}</code>
+                <div class="ms-auto btn-list">
+                    <button class="btn btn-sm btn-ghost-secondary" type="button" data-action="rename" data-alias="${alias}">Rename</button>
+                    <button class="btn btn-sm btn-ghost-danger" type="button" data-action="remove" data-alias="${alias}">Remove</button>
+                </div>
+            `;
+            list.appendChild(item);
+        });
+    } catch (err) {
+        showAliasError('Failed to load aliases');
+    }
+}
+
+function showAliasError(message) {
+    const error = document.getElementById('alias-error');
+    error.textContent = message;
+    error.style.display = 'block';
+}
+
+async function postAliasAction(payload) {
+    if (!currentAliasIndex) return;
+    const response = await fetch(`/indices/${encodeURIComponent(currentAliasIndex)}/aliases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'Failed to update alias');
+    }
+}
+
+function openRenameAlias(alias) {
+    renameAliasValue = alias;
+    document.getElementById('alias-rename-current').textContent = alias;
+    document.getElementById('alias-rename-input').value = alias;
+    document.getElementById('alias-rename-error').style.display = 'none';
+    const modal = new bootstrap.Modal(document.getElementById('alias-rename-modal'));
+    modal.show();
+}
+
+function refreshIndicesTable() {
+    if (window.location && window.location.reload) {
+        window.location.reload();
+    }
+}
+
+document.addEventListener('click', async (event) => {
+    const target = event.target;
+    if (target && target.id === 'alias-add-btn') {
+        const alias = document.getElementById('alias-new-input').value.trim();
+        if (!alias) return;
+        try {
+            await postAliasAction({ action: 'add', alias });
+            document.getElementById('alias-new-input').value = '';
+            await loadAliases(currentAliasIndex);
+        } catch (err) {
+            showAliasError(err.message);
+        }
+    }
+    if (target && target.dataset && target.dataset.action === 'remove') {
+        const alias = target.dataset.alias;
+        try {
+            await postAliasAction({ action: 'remove', alias });
+            await loadAliases(currentAliasIndex);
+        } catch (err) {
+            showAliasError(err.message);
+        }
+    }
+    if (target && target.dataset && target.dataset.action === 'rename') {
+        openRenameAlias(target.dataset.alias);
+    }
+});
+
+document.getElementById('alias-rename-confirm')?.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    const alias = renameAliasValue;
+    const input = document.getElementById('alias-rename-input');
+    const error = document.getElementById('alias-rename-error');
+    if (!alias || !input) return;
+    const newAlias = input.value.trim();
+    if (!newAlias || newAlias === alias) return;
+    try {
+        await postAliasAction({ action: 'rename', alias, new_alias: newAlias });
+        bootstrap.Modal.getInstance(document.getElementById('alias-rename-modal'))?.hide();
+        await loadAliases(currentAliasIndex);
+    } catch (err) {
+        error.textContent = err.message;
+        error.style.display = 'block';
+    }
+});
+
+document.getElementById('index-aliases-modal')?.addEventListener('hidden.bs.modal', () => {
+    refreshIndicesTable();
+});
 
 function initIndexDetailCharts() {
     if (!window.Chart) return;
