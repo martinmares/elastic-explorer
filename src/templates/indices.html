@@ -209,7 +209,14 @@
 // Toggle select all checkboxes
 function toggleSelectAll(checkbox) {
     const checkboxes = document.querySelectorAll('.index-checkbox');
-    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    checkboxes.forEach(cb => {
+        cb.checked = checkbox.checked;
+        if (checkbox.checked) {
+            selectedIndices.add(cb.value);
+        } else {
+            selectedIndices.delete(cb.value);
+        }
+    });
     updateBulkActions();
 }
 
@@ -251,6 +258,7 @@ function clearSelection() {
     document.querySelectorAll('.index-checkbox').forEach(cb => cb.checked = false);
     const selectAll = document.getElementById('select-all-indices');
     if (selectAll) selectAll.checked = false;
+    selectedIndices.clear();
     updateBulkActions();
 }
 
@@ -630,6 +638,17 @@ function formatCreatedDates() {
     });
 }
 
+const selectedIndices = new Set();
+
+function syncSelectedIndicesFromDom() {
+    document.querySelectorAll('.index-checkbox').forEach((cb) => {
+        if (selectedIndices.has(cb.value)) {
+            cb.checked = true;
+        }
+    });
+    updateBulkActions();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const select = document.getElementById('indices-refresh-interval');
     if (select) {
@@ -685,6 +704,18 @@ document.body.addEventListener('htmx:afterSwap', function(evt) {
         }
         refreshIndexMetrics();
         formatCreatedDates();
+        syncSelectedIndicesFromDom();
+    }
+});
+
+document.addEventListener('change', (event) => {
+    const target = event.target;
+    if (target && target.classList.contains('index-checkbox')) {
+        if (target.checked) {
+            selectedIndices.add(target.value);
+        } else {
+            selectedIndices.delete(target.value);
+        }
     }
 });
 </script>
