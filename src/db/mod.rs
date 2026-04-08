@@ -3,7 +3,6 @@ pub mod models;
 use anyhow::{Context, Result};
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
-use rand::TryRngCore;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
 use std::str::FromStr;
@@ -87,7 +86,64 @@ impl Database {
                 .context("Failed to run migration 004")?;
         }
 
+        Self::repair_console_history_schema(pool).await?;
+
         tracing::info!("Migrations completed successfully");
+        Ok(())
+    }
+
+    async fn repair_console_history_schema(pool: &SqlitePool) -> Result<()> {
+        let schema_sql: Option<String> = sqlx::query_scalar(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'console_history'"
+        )
+        .fetch_optional(pool)
+        .await
+        .context("Failed to inspect console_history schema")?;
+
+        let Some(schema_sql) = schema_sql else {
+            return Ok(());
+        };
+
+        if !schema_sql.contains("endpoints_old") {
+            return Ok(());
+        }
+
+        tracing::info!("Repairing console_history foreign key after endpoints migration");
+
+        let repair_sql = r#"
+BEGIN TRANSACTION;
+
+ALTER TABLE console_history RENAME TO console_history_old;
+
+CREATE TABLE console_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint_id INTEGER NOT NULL,
+    method TEXT NOT NULL CHECK(method IN ('GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD')),
+    path TEXT NOT NULL,
+    body TEXT,
+    response_status INTEGER,
+    response_body TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (endpoint_id) REFERENCES endpoints(id) ON DELETE CASCADE
+);
+
+INSERT INTO console_history (id, endpoint_id, method, path, body, response_status, response_body, created_at)
+SELECT id, endpoint_id, method, path, body, response_status, response_body, created_at
+FROM console_history_old;
+
+DROP TABLE console_history_old;
+
+CREATE INDEX IF NOT EXISTS idx_console_history_endpoint ON console_history(endpoint_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_console_history_created ON console_history(created_at DESC);
+
+COMMIT;
+"#;
+
+        sqlx::raw_sql(repair_sql)
+            .execute(pool)
+            .await
+            .context("Failed to repair console_history schema")?;
+
         Ok(())
     }
 
@@ -225,10 +281,7 @@ impl Database {
 
     fn encrypt_password(&self, password: &str) -> Result<String> {
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
-        let mut nonce_bytes = [0u8; 12];
-        let mut rng = rand::rngs::OsRng;
-        rng.try_fill_bytes(&mut nonce_bytes)
-            .context("Failed to generate encryption nonce")?;
+        let nonce_bytes: [u8; 12] = rand::random();
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher
             .encrypt(nonce, password.as_bytes())
@@ -282,7 +335,8 @@ impl Database {
         // Pokus se najít existující záznam se stejným obsahem
         let existing = sqlx::query_scalar::<_, i64>(
             "SELECT id FROM console_history
-             WHERE endpoint_id = ? AND method = ? AND path = ? AND (body IS ? OR (body IS NULL AND ? IS NULL))
+             WHERE endpoint_id = ? AND method = ? AND path = ?
+               AND ((body = ?) OR (body IS NULL AND ? IS NULL))
              LIMIT 1"
         )
         .bind(history.endpoint_id)

@@ -324,12 +324,12 @@ pub async fn execute_request(
 
     if let Some(db) = &state.db {
         if let Err(e) = db.save_console_history(history_entry).await {
-            tracing::warn!("Failed to save console history: {}", e);
+            tracing::warn!("Failed to save console history: {e:#}");
         }
 
         // Cleanup staré záznamy (ponechej pouze 200)
         if let Err(e) = db.cleanup_console_history(200).await {
-            tracing::warn!("Failed to cleanup console history: {}", e);
+            tracing::warn!("Failed to cleanup console history: {e:#}");
         }
     }
 

@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use rand::TryRngCore;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -53,10 +52,7 @@ pub fn load_or_create_key() -> Result<Vec<u8>> {
         return Ok(key_bytes);
     }
 
-    let mut key = [0u8; 32];
-    let mut rng = rand::rngs::OsRng;
-    rng.try_fill_bytes(&mut key)
-        .context("Failed to generate encryption key")?;
+    let key: [u8; 32] = rand::random();
     let key_hex = hex::encode(key);
 
     let mut file = fs::File::create(&key_path)
