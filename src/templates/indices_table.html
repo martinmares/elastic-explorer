@@ -16,7 +16,9 @@
 {% else %}
 {% let d = data.as_ref().unwrap() %}
 
-<div class="card" id="indices-table">
+<div class="card"
+     id="indices-table"
+     data-refresh-url="/indices/table?filter={{ d.filter }}&page={{ d.page }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}">
     <!-- Bulk actions toolbar -->
     <div class="card-header" id="bulk-actions-toolbar" style="display: none;">
         <div class="d-flex align-items-center">
@@ -137,9 +139,12 @@
                         {% if !index.aliases.is_empty() %}
                         <div class="text-muted small mt-1">
                             {% for alias in index.aliases.iter() %}
-                            <a href="{% if ctx.base_path == "/" %}/search{% else %}{{ ctx.base_path }}/search{% endif %}?index_pattern={{ alias }}&query=*" class="text-muted me-1" style="text-decoration: none;">
-                                <i class="ti ti-arrow-forward"></i> {{ alias }}
+                            <a href="{% if ctx.base_path == "/" %}/search{% else %}{{ ctx.base_path }}/search{% endif %}?index_pattern={{ alias.name }}&query=*" class="text-muted me-1" style="text-decoration: none;">
+                                <i class="ti ti-arrow-forward"></i> {{ alias.name }}
                             </a>
+                            {% if alias.is_write_index %}
+                            <span class="badge bg-green-lt me-1">write</span>
+                            {% endif %}
                             {% endfor %}
                         </div>
                         {% endif %}

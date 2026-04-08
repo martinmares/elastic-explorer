@@ -11,9 +11,26 @@ use serde::{Deserialize, Serialize};
 use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
 use crate::templates::{IndicesTemplate, IndicesTableTemplate, IndexDetailTemplate, PageContext};
 use crate::es::EsClient;
-use crate::models::{IndexInfo, IndicesListData, AliasInfo, IndexDetail};
+use crate::models::{IndexAlias, IndexInfo, IndicesListData, AliasInfo, IndexDetail};
 use crate::utils::{format_bytes, format_number, parse_size_to_bytes};
 use std::collections::HashMap;
+
+fn alias_operation_error_message(response: &serde_json::Value) -> Option<String> {
+    if response.get("errors").and_then(|v| v.as_bool()) == Some(true) {
+        return Some(
+            response.get("action_results")
+                .and_then(|v| serde_json::to_string_pretty(v).ok())
+                .or_else(|| serde_json::to_string_pretty(response).ok())
+                .unwrap_or_else(|| "Alias operation failed".to_string())
+        );
+    }
+
+    if let Some(false) = response.get("acknowledged").and_then(|v| v.as_bool()) {
+        return Some("Alias operation was not acknowledged by Elasticsearch".to_string());
+    }
+
+    None
+}
 
 #[derive(Debug, Deserialize)]
 pub struct IndicesQuery {
@@ -129,6 +146,54 @@ fn default_sort_order() -> String {
 
 fn default_hide_internal() -> bool {
     true // Defaultně skryté
+}
+
+async fn fetch_alias_backing_indices(
+    client: &EsClient,
+    alias_name: &str,
+) -> Result<Vec<(String, bool)>, (StatusCode, String)> {
+    let alias_details_path = format!("/_alias/{}", alias_name);
+    let alias_details: serde_json::Value = client.get(&alias_details_path)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mut backing_indices = Vec::new();
+    if let Some(indices_map) = alias_details.as_object() {
+        for (backing_index, index_data) in indices_map {
+            let Some(alias_meta) = index_data
+                .get("aliases")
+                .and_then(|aliases| aliases.get(alias_name))
+            else {
+                continue;
+            };
+            backing_indices.push((
+                backing_index.clone(),
+                alias_meta.get("is_write_index").and_then(|v| v.as_bool()).unwrap_or(false),
+            ));
+        }
+    }
+
+    backing_indices.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(backing_indices)
+}
+
+async fn fetch_index_alias_names(
+    client: &EsClient,
+    index_name: &str,
+) -> Result<Vec<String>, (StatusCode, String)> {
+    let aliases_path = format!("/{}/_alias", index_name);
+    let aliases_response: serde_json::Value = client.get(&aliases_path)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mut alias_names = Vec::new();
+    if let Some(aliases_map) = aliases_response.get(index_name)
+        .and_then(|index_obj| index_obj.get("aliases"))
+        .and_then(|aliases_obj| aliases_obj.as_object()) {
+            alias_names = aliases_map.keys().cloned().collect();
+        }
+    alias_names.sort();
+    Ok(alias_names)
 }
 
 /// GET /indices - Zobrazí seznam indexů
@@ -431,9 +496,17 @@ pub async fn indices_summary(
 }
 
 #[derive(Debug, Serialize)]
+pub struct IndexAliasEntry {
+    pub alias: String,
+    pub indices: Vec<String>,
+    pub write_target: Option<String>,
+    pub current_index_is_write: bool,
+}
+
+#[derive(Debug, Serialize)]
 pub struct IndexAliasesResponse {
     pub index: String,
-    pub aliases: Vec<String>,
+    pub aliases: Vec<IndexAliasEntry>,
 }
 
 /// GET /indices/{index_name}/aliases - Vrátí aliasy pro index
@@ -459,14 +532,76 @@ pub async fn index_aliases(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let mut alias_names: Vec<String> = Vec::new();
+    let mut current_index_write_flags: HashMap<String, bool> = HashMap::new();
     if let Some(aliases_map) = aliases_response.get(&index_name)
         .and_then(|index_obj| index_obj.get("aliases"))
         .and_then(|aliases_obj| aliases_obj.as_object()) {
             alias_names = aliases_map.keys().map(|k| k.to_string()).collect();
+            for (alias_name, alias_meta) in aliases_map {
+                current_index_write_flags.insert(
+                    alias_name.clone(),
+                    alias_meta.get("is_write_index").and_then(|v| v.as_bool()).unwrap_or(false),
+                );
+            }
     }
     alias_names.sort();
 
-    Ok(Json(IndexAliasesResponse { index: index_name, aliases: alias_names }))
+    if alias_names.is_empty() {
+        return Ok(Json(IndexAliasesResponse {
+            index: index_name,
+            aliases: Vec::new(),
+        }));
+    }
+
+    let alias_details_path = format!("/_alias/{}", alias_names.join(","));
+    let alias_details: serde_json::Value = client.get(&alias_details_path)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mut alias_entries = Vec::new();
+    for alias_name in alias_names {
+        let mut backing_indices = Vec::new();
+        let mut explicit_write_target: Option<String> = None;
+
+        if let Some(indices_map) = alias_details.as_object() {
+            for (backing_index, index_data) in indices_map {
+                let Some(alias_meta) = index_data
+                    .get("aliases")
+                    .and_then(|aliases| aliases.get(&alias_name))
+                else {
+                    continue;
+                };
+
+                backing_indices.push(backing_index.clone());
+                if alias_meta.get("is_write_index").and_then(|v| v.as_bool()) == Some(true) {
+                    explicit_write_target = Some(backing_index.clone());
+                }
+            }
+        }
+
+        backing_indices.sort();
+        let write_target = explicit_write_target.or_else(|| {
+            if backing_indices.len() == 1 {
+                backing_indices.first().cloned()
+            } else {
+                None
+            }
+        });
+        let current_index_is_write = write_target.as_deref() == Some(index_name.as_str())
+            || current_index_write_flags.get(&alias_name).copied().unwrap_or(false);
+
+        alias_entries.push(IndexAliasEntry {
+            alias: alias_name,
+            indices: backing_indices,
+            write_target,
+            current_index_is_write,
+        });
+    }
+
+    Ok(Json(IndexAliasesResponse {
+        index: index_name,
+        aliases: alias_entries,
+    }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -474,6 +609,7 @@ pub struct AliasActionRequest {
     pub action: String, // add | remove | rename
     pub alias: Option<String>,
     pub new_alias: Option<String>,
+    pub is_write_index: Option<bool>,
 }
 
 /// POST /indices/{index_name}/aliases - Upraví aliasy pro index
@@ -501,28 +637,135 @@ pub async fn index_alias_action(
         "add" => {
             let alias = payload.alias.clone().filter(|s| !s.is_empty())
                 .ok_or_else(|| (StatusCode::BAD_REQUEST, "Alias is required".to_string()))?;
-            actions.push(serde_json::json!({ "add": { "index": index_name, "alias": alias } }));
+
+            if payload.is_write_index == Some(true) {
+                let body = serde_json::json!({
+                    "actions": [{
+                        "add": {
+                            "index": index_name,
+                            "alias": alias,
+                            "is_write_index": true
+                        }
+                    }]
+                });
+                let response: serde_json::Value = client.post("/_aliases", body)
+                    .await
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+                if let Some(message) = alias_operation_error_message(&response) {
+                    tracing::warn!("Alias add failed for index {index_name}: {message}");
+                    return Err((StatusCode::BAD_REQUEST, message));
+                }
+            } else {
+                let add_path = format!(
+                    "/{}/_alias/{}",
+                    urlencoding::encode(&index_name),
+                    urlencoding::encode(&alias)
+                );
+                let response: serde_json::Value = client.put(&add_path, serde_json::json!({}))
+                    .await
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+                if let Some(message) = alias_operation_error_message(&response) {
+                    tracing::warn!("Alias add failed for index {index_name}: {message}");
+                    return Err((StatusCode::BAD_REQUEST, message));
+                }
+            }
+
+            let current_aliases = fetch_index_alias_names(&client, &index_name).await?;
+            if !current_aliases.iter().any(|existing| existing == &alias) {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("Alias {alias} was not attached to index {index_name}"),
+                ));
+            }
+
+            return Ok(Json(serde_json::json!({ "success": true })));
         }
         "remove" => {
             let alias = payload.alias.clone().filter(|s| !s.is_empty())
                 .ok_or_else(|| (StatusCode::BAD_REQUEST, "Alias is required".to_string()))?;
-            actions.push(serde_json::json!({ "remove": { "index": index_name, "alias": alias } }));
+
+            let remove_path = format!(
+                "/{}/_alias/{}",
+                urlencoding::encode(&index_name),
+                urlencoding::encode(&alias)
+            );
+
+            let response: serde_json::Value = client.delete(&remove_path)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+            if let Some(message) = alias_operation_error_message(&response) {
+                tracing::warn!("Alias remove failed for index {index_name}: {message}");
+                return Err((StatusCode::BAD_REQUEST, message));
+            }
+
+            let remaining_aliases = fetch_index_alias_names(&client, &index_name).await?;
+            if remaining_aliases.iter().any(|existing| existing == &alias) {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("Alias {alias} is still attached to index {index_name} after remove"),
+                ));
+            }
+
+            return Ok(Json(serde_json::json!({ "success": true })));
         }
         "rename" => {
             let alias = payload.alias.clone().filter(|s| !s.is_empty())
                 .ok_or_else(|| (StatusCode::BAD_REQUEST, "Alias is required".to_string()))?;
             let new_alias = payload.new_alias.clone().filter(|s| !s.is_empty())
                 .ok_or_else(|| (StatusCode::BAD_REQUEST, "New alias is required".to_string()))?;
-            actions.push(serde_json::json!({ "remove": { "index": index_name, "alias": alias } }));
-            actions.push(serde_json::json!({ "add": { "index": index_name, "alias": new_alias } }));
+
+            let backing_indices = fetch_alias_backing_indices(&client, &alias).await?;
+            if backing_indices.is_empty() {
+                return Err((StatusCode::BAD_REQUEST, "Alias not found".to_string()));
+            }
+
+            for (backing_index, was_write_index) in backing_indices {
+                actions.push(serde_json::json!({
+                    "remove": { "index": backing_index, "alias": alias }
+                }));
+                let mut add_action = serde_json::json!({
+                    "index": backing_index,
+                    "alias": new_alias,
+                });
+                if was_write_index || (backing_index == index_name && payload.is_write_index == Some(true)) {
+                    add_action["is_write_index"] = serde_json::Value::Bool(true);
+                }
+                actions.push(serde_json::json!({ "add": add_action }));
+            }
+        }
+        "set_write_index" => {
+            let alias = payload.alias.clone().filter(|s| !s.is_empty())
+                .ok_or_else(|| (StatusCode::BAD_REQUEST, "Alias is required".to_string()))?;
+            let backing_indices = fetch_alias_backing_indices(&client, &alias).await?;
+            if backing_indices.is_empty() {
+                return Err((StatusCode::BAD_REQUEST, "Alias not found".to_string()));
+            }
+
+            for (backing_index, _) in backing_indices {
+                actions.push(serde_json::json!({
+                    "add": {
+                        "index": backing_index,
+                        "alias": alias,
+                        "is_write_index": backing_index == index_name
+                    }
+                }));
+            }
         }
         _ => return Err((StatusCode::BAD_REQUEST, "Unsupported action".to_string())),
     }
 
     let body = serde_json::json!({ "actions": actions });
-    let _: serde_json::Value = client.post("/_aliases", body)
+    let response: serde_json::Value = client.post("/_aliases", body)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if let Some(message) = alias_operation_error_message(&response) {
+        tracing::warn!("Alias operation failed for index {index_name}: {message}");
+        return Err((StatusCode::BAD_REQUEST, message));
+    }
 
     Ok(Json(serde_json::json!({ "success": true })))
 }
@@ -643,22 +886,30 @@ async fn load_indices_data(
     }
 
     // Načti aliasy
-    let aliases_path = "/_cat/aliases?format=json";
+    let aliases_path = "/_cat/aliases?format=json&h=alias,index,is_write_index";
     let aliases: Vec<AliasInfo> = client.get(aliases_path).await.unwrap_or_default();
 
     // Vytvoř mapu index -> seznam aliasů
-    let mut aliases_map: HashMap<String, Vec<String>> = HashMap::new();
+    let mut aliases_map: HashMap<String, Vec<IndexAlias>> = HashMap::new();
     for alias_info in aliases {
         aliases_map
             .entry(alias_info.index)
             .or_default()
-            .push(alias_info.alias);
+            .push(IndexAlias {
+                name: alias_info.alias,
+                is_write_index: matches!(
+                    alias_info.is_write_index.as_deref(),
+                    Some("true") | Some("1")
+                ),
+            });
     }
 
     // Přiřaď aliasy k indexům
     for idx in &mut indices {
         if let Some(aliases) = aliases_map.get(&idx.index) {
-            idx.aliases = aliases.clone();
+            let mut aliases = aliases.clone();
+            aliases.sort_by(|a, b| a.name.cmp(&b.name));
+            idx.aliases = aliases;
         }
     }
 

@@ -2,6 +2,12 @@ use serde::{Deserialize, Serialize};
 use crate::utils::{format_bytes, format_number, parse_size_to_bytes};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct IndexAlias {
+    pub name: String,
+    pub is_write_index: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IndexInfo {
     pub health: String,        // green, yellow, red
     pub status: String,        // open, close
@@ -20,13 +26,15 @@ pub struct IndexInfo {
     #[serde(rename = "creation.date.string")]
     pub creation_date: Option<String>,
     #[serde(skip)]
-    pub aliases: Vec<String>,  // seznam aliasů
+    pub aliases: Vec<IndexAlias>,  // seznam aliasů
 }
 
 #[derive(Debug, Deserialize)]
 pub struct AliasInfo {
     pub alias: String,
     pub index: String,
+    #[serde(default)]
+    pub is_write_index: Option<String>,
 }
 
 impl IndexInfo {
