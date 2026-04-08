@@ -146,7 +146,24 @@
         <div class="tab-pane" id="tab-settings" role="tabpanel">
             <div class="p-4">
                 {% if d.settings.is_some() %}
-                <pre class="bg-dark text-white p-3 rounded"><code>{{ d.settings.as_ref().unwrap() }}</code></pre>
+                <div class="d-flex justify-content-end gap-2 mb-3">
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary index-detail-copy-btn"
+                        data-copy-target="index-detail-settings-code">
+                        <i class="ti ti-copy me-1"></i>
+                        Copy
+                    </button>
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary index-detail-download-btn"
+                        data-download-target="index-detail-settings-code"
+                        data-download-name="{{ d.index_name }}-settings.json">
+                        <i class="ti ti-download me-1"></i>
+                        Download
+                    </button>
+                </div>
+                <pre class="bg-dark text-white p-3 rounded"><code id="index-detail-settings-code">{{ d.settings.as_ref().unwrap() }}</code></pre>
                 {% else %}
                 <div class="alert alert-warning">
                     <i class="ti ti-alert-triangle me-1"></i>
@@ -160,7 +177,24 @@
         <div class="tab-pane" id="tab-mappings" role="tabpanel">
             <div class="p-4">
                 {% if d.mappings.is_some() %}
-                <pre class="bg-dark text-white p-3 rounded"><code>{{ d.mappings.as_ref().unwrap() }}</code></pre>
+                <div class="d-flex justify-content-end gap-2 mb-3">
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary index-detail-copy-btn"
+                        data-copy-target="index-detail-mappings-code">
+                        <i class="ti ti-copy me-1"></i>
+                        Copy
+                    </button>
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary index-detail-download-btn"
+                        data-download-target="index-detail-mappings-code"
+                        data-download-name="{{ d.index_name }}-mappings.json">
+                        <i class="ti ti-download me-1"></i>
+                        Download
+                    </button>
+                </div>
+                <pre class="bg-dark text-white p-3 rounded"><code id="index-detail-mappings-code">{{ d.mappings.as_ref().unwrap() }}</code></pre>
                 {% else %}
                 <div class="alert alert-warning">
                     <i class="ti ti-alert-triangle me-1"></i>

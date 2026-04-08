@@ -111,6 +111,7 @@
     <div class="col-12">
         <div id="indices-table"
              hx-get="/indices/table?filter={{ d.filter }}&page={{ d.page }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
+             data-refresh-url="/indices/table?filter={{ d.filter }}&page={{ d.page }}&per_page={{ d.per_page }}&sort_by={{ d.sort_by }}&sort_order={{ d.sort_order }}&hide_internal={{ d.hide_internal }}"
              hx-trigger="load"
              hx-swap="outerHTML">
             <div class="card">
@@ -208,6 +209,10 @@
                         <input type="text" class="form-control" id="alias-new-input" placeholder="alias-name">
                         <button class="btn btn-primary" type="button" id="alias-add-btn">Add</button>
                     </div>
+                    <label class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" id="alias-write-index">
+                        <span class="form-check-label">Use this index as write target</span>
+                    </label>
                 </div>
                 <div class="text-muted small" id="alias-error" style="display: none;"></div>
             </div>
@@ -242,6 +247,27 @@
     </div>
 </div>
 
+<!-- Modal for alias remove -->
+<div class="modal modal-blur fade" id="alias-remove-modal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
+        <div class="modal-content shadow-lg">
+            <div class="modal-header">
+                <h5 class="modal-title">Remove alias</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="alias-remove-message"></div>
+                <div class="text-muted small mt-2" id="alias-remove-hint"></div>
+                <div class="text-danger small mt-2" id="alias-remove-error" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" data-bs-dismiss="modal">No</button>
+                <button type="button" class="btn btn-danger" id="alias-remove-confirm">Yes, remove</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
     .summary-main-table,
@@ -258,6 +284,14 @@
     .summary-main-table td:first-child code {
         white-space: normal;
         word-break: break-word;
+    }
+    .alias-item-meta {
+        font-size: 12px;
+    }
+    .alias-index-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .25rem;
     }
 </style>
 <script>
@@ -591,11 +625,16 @@ function openIndexDetail(indexName) {
 
 let currentAliasIndex = null;
 let renameAliasValue = null;
+let renameAliasIsWrite = false;
+let aliasModalDirty = false;
+let removeAliasState = null;
 
 async function openIndexAliases(indexName) {
     currentAliasIndex = indexName;
+    aliasModalDirty = false;
     document.getElementById('alias-index-name').textContent = indexName;
     document.getElementById('alias-new-input').value = '';
+    document.getElementById('alias-write-index').checked = false;
     document.getElementById('alias-error').style.display = 'none';
 
     const modal = new bootstrap.Modal(document.getElementById('index-aliases-modal'));
@@ -619,13 +658,36 @@ async function loadAliases(indexName) {
             return;
         }
         aliases.forEach((alias) => {
+            const indices = Array.isArray(alias.indices) ? alias.indices : [];
+            const writeTargetBadge = alias.write_target
+                ? `<span class="badge bg-${alias.current_index_is_write ? 'green' : 'blue'}-lt">write → ${escapeHtml(alias.write_target)}</span>`
+                : '<span class="badge bg-yellow-lt">writes disabled</span>';
+            const multiIndexBadge = indices.length > 1
+                ? `<span class="badge bg-secondary-lt">${indices.length} indices</span>`
+                : '<span class="badge bg-secondary-lt">1 index</span>';
+            const setWriteButton = alias.current_index_is_write
+                ? ''
+                : `<button class="btn btn-sm btn-ghost-primary" type="button" data-action="set-write" data-alias="${escapeAttribute(alias.alias)}">Use for writes</button>`;
             const item = document.createElement('div');
-            item.className = 'list-group-item d-flex align-items-center';
+            item.className = 'list-group-item';
             item.innerHTML = `
-                <code class="me-2">${alias}</code>
-                <div class="ms-auto btn-list">
-                    <button class="btn btn-sm btn-ghost-secondary" type="button" data-action="rename" data-alias="${alias}">Rename</button>
-                    <button class="btn btn-sm btn-ghost-danger" type="button" data-action="remove" data-alias="${alias}">Remove</button>
+                <div class="d-flex align-items-start gap-3">
+                    <div class="flex-fill">
+                        <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+                            <code>${escapeHtml(alias.alias)}</code>
+                            ${multiIndexBadge}
+                            ${writeTargetBadge}
+                        </div>
+                        <div class="alias-item-meta text-muted mb-1">Backing indices</div>
+                        <div class="alias-index-list">
+                            ${indices.map((name) => `<code class="small">${escapeHtml(name)}</code>`).join('')}
+                        </div>
+                    </div>
+                    <div class="btn-list">
+                        ${setWriteButton}
+                        <button class="btn btn-sm btn-ghost-secondary" type="button" data-action="rename" data-alias="${escapeAttribute(alias.alias)}" data-is-write="${alias.current_index_is_write ? 'true' : 'false'}">Rename</button>
+                        <button class="btn btn-sm btn-ghost-danger" type="button" data-action="remove" data-alias="${escapeAttribute(alias.alias)}" data-backing-count="${indices.length}">Remove</button>
+                    </div>
                 </div>
             `;
             list.appendChild(item);
@@ -654,8 +716,9 @@ async function postAliasAction(payload) {
     }
 }
 
-function openRenameAlias(alias) {
+function openRenameAlias(alias, isWrite) {
     renameAliasValue = alias;
+    renameAliasIsWrite = !!isWrite;
     document.getElementById('alias-rename-current').textContent = alias;
     document.getElementById('alias-rename-input').value = alias;
     document.getElementById('alias-rename-error').style.display = 'none';
@@ -663,36 +726,120 @@ function openRenameAlias(alias) {
     modal.show();
 }
 
+function openRemoveAlias(alias, backingCount) {
+    removeAliasState = { alias, backingCount };
+    document.getElementById('alias-remove-message').innerHTML =
+        `Remove alias <code>${escapeHtml(alias)}</code> from index <code>${escapeHtml(currentAliasIndex || '')}</code>?`;
+    document.getElementById('alias-remove-hint').textContent = backingCount > 1
+        ? `Alias will remain on ${backingCount - 1} other index${backingCount - 1 === 1 ? '' : 'es'}.`
+        : 'Alias is only attached to this index.';
+    document.getElementById('alias-remove-error').style.display = 'none';
+    const modal = new bootstrap.Modal(document.getElementById('alias-remove-modal'));
+    modal.show();
+}
+
 function refreshIndicesTable() {
-    if (window.location && window.location.reload) {
-        window.location.reload();
+    const table = document.getElementById('indices-table');
+    const refreshUrl = table?.dataset?.refreshUrl;
+    if (!table || !refreshUrl) {
+        return;
     }
+    htmx.ajax('GET', refreshUrl, {
+        target: '#indices-table',
+        swap: 'outerHTML'
+    });
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function escapeAttribute(value) {
+    return escapeHtml(value);
+}
+
+async function copyIndexDetailContent(button) {
+    const targetId = button?.dataset?.copyTarget;
+    if (!targetId) return;
+    const code = document.getElementById(targetId);
+    if (!code) return;
+
+    try {
+        await navigator.clipboard.writeText(code.textContent || '');
+        const originalHtml = button.innerHTML;
+        button.innerHTML = '<i class="ti ti-check"></i>';
+        button.classList.remove('btn-outline-secondary');
+        button.classList.add('btn-success');
+        setTimeout(() => {
+            button.innerHTML = originalHtml;
+            button.classList.remove('btn-success');
+            button.classList.add('btn-outline-secondary');
+        }, 1200);
+    } catch (err) {
+        console.error('Failed to copy index detail content:', err);
+    }
+}
+
+function downloadIndexDetailContent(button) {
+    const targetId = button?.dataset?.downloadTarget;
+    const fileName = button?.dataset?.downloadName;
+    if (!targetId || !fileName) return;
+    const code = document.getElementById(targetId);
+    if (!code) return;
+
+    const blob = new Blob([code.textContent || ''], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
 }
 
 document.addEventListener('click', async (event) => {
     const target = event.target;
-    if (target && target.id === 'alias-add-btn') {
+    const button = target instanceof Element ? target.closest('button') : null;
+    if (button && button.id === 'alias-add-btn') {
         const alias = document.getElementById('alias-new-input').value.trim();
+        const isWriteIndex = document.getElementById('alias-write-index').checked;
         if (!alias) return;
         try {
-            await postAliasAction({ action: 'add', alias });
+            await postAliasAction({ action: 'add', alias, is_write_index: isWriteIndex });
+            aliasModalDirty = true;
             document.getElementById('alias-new-input').value = '';
+            document.getElementById('alias-write-index').checked = false;
             await loadAliases(currentAliasIndex);
         } catch (err) {
             showAliasError(err.message);
         }
     }
-    if (target && target.dataset && target.dataset.action === 'remove') {
-        const alias = target.dataset.alias;
+    if (button && button.dataset && button.dataset.action === 'remove') {
+        openRemoveAlias(button.dataset.alias, parseInt(button.dataset.backingCount || '1', 10));
+    }
+    if (button && button.dataset && button.dataset.action === 'rename') {
+        openRenameAlias(button.dataset.alias, button.dataset.isWrite === 'true');
+    }
+    if (button && button.dataset && button.dataset.action === 'set-write') {
         try {
-            await postAliasAction({ action: 'remove', alias });
+            await postAliasAction({ action: 'set_write_index', alias: button.dataset.alias, is_write_index: true });
+            aliasModalDirty = true;
             await loadAliases(currentAliasIndex);
         } catch (err) {
             showAliasError(err.message);
         }
     }
-    if (target && target.dataset && target.dataset.action === 'rename') {
-        openRenameAlias(target.dataset.alias);
+    if (button && button.classList && button.classList.contains('index-detail-copy-btn')) {
+        await copyIndexDetailContent(button);
+    }
+    if (button && button.classList && button.classList.contains('index-detail-download-btn')) {
+        downloadIndexDetailContent(button);
     }
 });
 
@@ -705,7 +852,8 @@ document.getElementById('alias-rename-confirm')?.addEventListener('click', async
     const newAlias = input.value.trim();
     if (!newAlias || newAlias === alias) return;
     try {
-        await postAliasAction({ action: 'rename', alias, new_alias: newAlias });
+        await postAliasAction({ action: 'rename', alias, new_alias: newAlias, is_write_index: renameAliasIsWrite });
+        aliasModalDirty = true;
         bootstrap.Modal.getInstance(document.getElementById('alias-rename-modal'))?.hide();
         await loadAliases(currentAliasIndex);
     } catch (err) {
@@ -714,8 +862,62 @@ document.getElementById('alias-rename-confirm')?.addEventListener('click', async
     }
 });
 
+document.getElementById('alias-remove-confirm')?.addEventListener('click', async () => {
+    if (!removeAliasState) {
+        return;
+    }
+
+    const error = document.getElementById('alias-remove-error');
+    try {
+        await postAliasAction({ action: 'remove', alias: removeAliasState.alias });
+        aliasModalDirty = true;
+        bootstrap.Modal.getInstance(document.getElementById('alias-remove-modal'))?.hide();
+        removeAliasState = null;
+        await loadAliases(currentAliasIndex);
+    } catch (err) {
+        error.textContent = err.message;
+        error.style.display = 'block';
+    }
+});
+
+document.getElementById('alias-rename-modal')?.addEventListener('shown.bs.modal', () => {
+    document.getElementById('alias-rename-input')?.focus();
+    document.getElementById('alias-rename-input')?.select();
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') {
+        return;
+    }
+
+    const removeModalEl = document.getElementById('alias-remove-modal');
+    if (removeModalEl && removeModalEl.classList.contains('show')) {
+        event.preventDefault();
+        event.stopPropagation();
+        bootstrap.Modal.getInstance(removeModalEl)?.hide();
+        return;
+    }
+
+    const renameModalEl = document.getElementById('alias-rename-modal');
+    if (renameModalEl && renameModalEl.classList.contains('show')) {
+        event.preventDefault();
+        event.stopPropagation();
+        bootstrap.Modal.getInstance(renameModalEl)?.hide();
+        return;
+    }
+
+    const aliasesModalEl = document.getElementById('index-aliases-modal');
+    if (aliasesModalEl && aliasesModalEl.classList.contains('show')) {
+        event.preventDefault();
+        event.stopPropagation();
+        bootstrap.Modal.getInstance(aliasesModalEl)?.hide();
+    }
+}, true);
+
 document.getElementById('index-aliases-modal')?.addEventListener('hidden.bs.modal', () => {
-    refreshIndicesTable();
+    if (aliasModalDirty) {
+        refreshIndicesTable();
+    }
 });
 
 function initIndexDetailCharts() {
