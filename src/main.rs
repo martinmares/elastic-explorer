@@ -3,6 +3,7 @@ mod db;
 mod es;
 mod handlers;
 mod models;
+mod static_assets;
 mod templates;
 mod utils;
 
@@ -13,7 +14,6 @@ use axum::{
 };
 use clap::Parser;
 use std::sync::Arc;
-use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use chrono::Utc;
 
@@ -145,7 +145,7 @@ async fn main() -> Result<()> {
         .route("/console", get(handlers::console::console_page))
         .route("/console/execute", post(handlers::console::execute_request))
         .route("/console/history-table", get(handlers::console::console_history_table))
-        .nest_service("/static", ServeDir::new("static"))
+        .route("/static/{*path}", get(static_assets::serve))
         .with_state(state);
     let app = if base_path == "/" {
         router
