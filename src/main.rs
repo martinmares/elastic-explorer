@@ -102,6 +102,7 @@ async fn main() -> Result<()> {
             name,
             url,
             insecure: args.conf_es_insecure,
+            index_pattern: None,
             username: args.conf_es_username.clone(),
             password_encrypted: None,
             created_at: Utc::now(),
@@ -136,6 +137,8 @@ async fn main() -> Result<()> {
         .route("/indices/summary", get(handlers::indices::indices_summary))
         .route("/indices/metrics", get(handlers::indices::indices_metrics))
         .route("/indices/detail/{index_name}", get(handlers::indices::index_detail))
+        .route("/indices/{index_name}/new-mapping", get(handlers::indices::new_mapping_prepare))
+        .route("/indices/{index_name}/new-mapping", post(handlers::indices::new_mapping_create))
         .route("/indices/{index_name}/aliases", get(handlers::indices::index_aliases))
         .route("/indices/{index_name}/aliases", post(handlers::indices::index_alias_action))
         .route("/indices/bulk/{action}/{index_name}", post(handlers::indices::bulk_operation))

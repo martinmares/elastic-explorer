@@ -167,6 +167,59 @@
     </div>
 </div>
 
+<!-- Modal for creating a new index from mapping -->
+<div class="modal modal-blur fade" id="new-mapping-modal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
+        <div class="modal-content shadow-lg">
+            <div class="modal-header">
+                <h5 class="modal-title">New mapping</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="new-mapping-error" class="alert alert-danger d-none"></div>
+                <div class="mb-3">
+                    <label class="form-label">Source index</label>
+                    <div class="fw-bold" id="new-mapping-source"></div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label class="form-label required">New index name</label>
+                        <input type="text" class="form-control" id="new-mapping-index" autocomplete="off">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Alias</label>
+                        <input type="text" class="form-control" id="new-mapping-alias" autocomplete="off" placeholder="optional">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label required">Shards</label>
+                        <input type="number" class="form-control" id="new-mapping-shards" min="1" step="1">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label required">Replicas</label>
+                        <input type="number" class="form-control" id="new-mapping-replicas" min="0" step="1">
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <label class="form-label required">Settings</label>
+                    <textarea class="form-control font-monospace" id="new-mapping-settings-json" rows="10" spellcheck="false"></textarea>
+                    <small class="form-hint">Portable index settings copied from source index. Shards and replicas are controlled by the inputs above.</small>
+                </div>
+                <div class="mt-3">
+                    <label class="form-label required">Mapping</label>
+                    <textarea class="form-control font-monospace" id="new-mapping-json" rows="20" spellcheck="false"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="new-mapping-create-btn">
+                    <i class="ti ti-plus"></i>
+                    Add
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal for bulk operations -->
 <div class="modal modal-blur fade" id="bulk-operation-modal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
@@ -293,6 +346,14 @@
         flex-wrap: wrap;
         gap: .25rem;
     }
+    #new-mapping-json,
+    #new-mapping-settings-json {
+        min-height: 420px;
+        resize: vertical;
+    }
+    #new-mapping-settings-json {
+        min-height: 220px;
+    }
 </style>
 <script>
 // JavaScript functions for managing indices
@@ -385,14 +446,16 @@ function showBulkOperationModal(action, indices) {
         'delete': 'Delete',
         'close': 'Close',
         'open': 'Open',
-        'refresh': 'Refresh'
+        'refresh': 'Refresh',
+        'replicas': 'Set replicas'
     };
 
     const actionColors = {
         'delete': 'danger',
         'close': 'warning',
         'open': 'success',
-        'refresh': 'info'
+        'refresh': 'info',
+        'replicas': 'primary'
     };
 
     const actionLabel = actionLabels[action] || action;
@@ -403,6 +466,14 @@ function showBulkOperationModal(action, indices) {
 
     // Show confirmation screen
     const content = document.getElementById('bulk-operation-content');
+    const replicasInput = action === 'replicas' ? `
+        <div class="mb-3">
+            <label class="form-label">Number of replicas</label>
+            <input type="number" class="form-control" id="bulk-replicas-input" min="0" step="1" value="1">
+            <small class="form-hint">This will update <code>index.number_of_replicas</code> on all selected indices.</small>
+        </div>
+    ` : '';
+
     content.innerHTML = `
         <div class="alert alert-${actionColor}">
             <h4 class="alert-title">
@@ -413,6 +484,7 @@ function showBulkOperationModal(action, indices) {
                 Operation <strong>${actionLabel}</strong> will be performed on <strong>${indices.length}</strong> indices.
             </div>
         </div>
+        ${replicasInput}
         <div class="list-group list-group-flush" style="max-height: 300px; overflow-y: auto;">
             ${indices.map(idx => `
                 <div class="list-group-item">
@@ -442,6 +514,18 @@ function showBulkOperationModal(action, indices) {
 async function executeBulkOperation(action, indices) {
     const content = document.getElementById('bulk-operation-content');
     const footer = document.getElementById('bulk-operation-footer');
+    let replicasValue = null;
+
+    if (action === 'replicas') {
+        const input = document.getElementById('bulk-replicas-input');
+        const parsed = parseInt(input?.value ?? '', 10);
+        if (Number.isNaN(parsed) || parsed < 0) {
+            alert('Replica count must be zero or greater.');
+            input?.focus();
+            return;
+        }
+        replicasValue = parsed;
+    }
 
     // Show progress screen
     footer.innerHTML = ''; // Hide buttons during operation
@@ -482,7 +566,8 @@ async function executeBulkOperation(action, indices) {
 
         try {
             // Call API endpoint
-            const response = await fetch(`/indices/bulk/${action}/${encodeURIComponent(indexName)}`, {
+            const query = action === 'replicas' ? `?replicas=${replicasValue}` : '';
+            const response = await fetch(`/indices/bulk/${action}/${encodeURIComponent(indexName)}${query}`, {
                 method: 'POST'
             });
 
@@ -622,6 +707,127 @@ function openIndexDetail(indexName) {
         console.error('Failed to load index detail:', err);
     });
 }
+
+let currentNewMappingSource = null;
+
+async function openNewMapping(indexName) {
+    currentNewMappingSource = indexName;
+    const error = document.getElementById('new-mapping-error');
+    const createBtn = document.getElementById('new-mapping-create-btn');
+    error.classList.add('d-none');
+    error.textContent = '';
+    createBtn.disabled = true;
+
+    document.getElementById('new-mapping-source').textContent = indexName;
+    document.getElementById('new-mapping-index').value = '';
+    document.getElementById('new-mapping-alias').value = '';
+    document.getElementById('new-mapping-shards').value = '1';
+    document.getElementById('new-mapping-replicas').value = '1';
+    document.getElementById('new-mapping-settings-json').value = 'Loading...';
+    document.getElementById('new-mapping-json').value = 'Loading...';
+
+    const modal = new bootstrap.Modal(document.getElementById('new-mapping-modal'));
+    modal.show();
+
+    try {
+        const response = await fetch(`/indices/${encodeURIComponent(indexName)}/new-mapping`);
+        if (!response.ok) {
+            throw new Error(await response.text() || 'Failed to load mapping');
+        }
+        const data = await response.json();
+        document.getElementById('new-mapping-source').textContent = data.source_index;
+        document.getElementById('new-mapping-index').value = data.new_index;
+        document.getElementById('new-mapping-shards').value = data.shards;
+        document.getElementById('new-mapping-replicas').value = data.replicas;
+        document.getElementById('new-mapping-settings-json').value = data.settings;
+        document.getElementById('new-mapping-json').value = data.mapping;
+        createBtn.disabled = false;
+    } catch (err) {
+        showNewMappingError(err.message);
+        document.getElementById('new-mapping-settings-json').value = '';
+        document.getElementById('new-mapping-json').value = '';
+    }
+}
+
+function showNewMappingError(message) {
+    const error = document.getElementById('new-mapping-error');
+    error.textContent = message;
+    error.classList.remove('d-none');
+}
+
+document.getElementById('new-mapping-create-btn')?.addEventListener('click', async () => {
+    if (!currentNewMappingSource) {
+        return;
+    }
+
+    const createBtn = document.getElementById('new-mapping-create-btn');
+    const newIndex = document.getElementById('new-mapping-index').value.trim();
+    const alias = document.getElementById('new-mapping-alias').value.trim();
+    const shards = parseInt(document.getElementById('new-mapping-shards').value, 10);
+    const replicas = parseInt(document.getElementById('new-mapping-replicas').value, 10);
+    const settingsText = document.getElementById('new-mapping-settings-json').value;
+    const mappingText = document.getElementById('new-mapping-json').value;
+
+    if (!newIndex) {
+        showNewMappingError('New index name is required.');
+        return;
+    }
+    if (Number.isNaN(shards) || shards < 1) {
+        showNewMappingError('Shards must be at least 1.');
+        return;
+    }
+    if (Number.isNaN(replicas) || replicas < 0) {
+        showNewMappingError('Replicas must be zero or greater.');
+        return;
+    }
+
+    let settings;
+    try {
+        settings = JSON.parse(settingsText);
+    } catch (err) {
+        showNewMappingError(`Settings are not valid JSON: ${err.message}`);
+        return;
+    }
+    if (!settings || Array.isArray(settings) || typeof settings !== 'object') {
+        showNewMappingError('Settings must be a JSON object.');
+        return;
+    }
+
+    let mapping;
+    try {
+        mapping = JSON.parse(mappingText);
+    } catch (err) {
+        showNewMappingError(`Mapping is not valid JSON: ${err.message}`);
+        return;
+    }
+
+    createBtn.disabled = true;
+    try {
+        const response = await fetch(`/indices/${encodeURIComponent(currentNewMappingSource)}/new-mapping`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                new_index: newIndex,
+                alias: alias || null,
+                shards,
+                replicas,
+                settings,
+                mapping,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(await response.text() || 'Failed to create index');
+        }
+
+        bootstrap.Modal.getInstance(document.getElementById('new-mapping-modal'))?.hide();
+        refreshIndicesTable();
+    } catch (err) {
+        showNewMappingError(err.message);
+    } finally {
+        createBtn.disabled = false;
+    }
+});
 
 let currentAliasIndex = null;
 let renameAliasValue = null;

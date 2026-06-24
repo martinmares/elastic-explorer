@@ -36,6 +36,9 @@
                 <button class="btn btn-info btn-sm" onclick="bulkAction('refresh')" title="Refresh selected indices">
                     <i class="ti ti-refresh"></i> Refresh
                 </button>
+                <button class="btn btn-primary btn-sm" onclick="bulkAction('replicas')" title="Change replicas for selected indices">
+                    <i class="ti ti-copy-plus"></i> Replicas
+                </button>
                 <button class="btn btn-ghost-secondary btn-sm" onclick="clearSelection()" title="Clear selection">
                     <i class="ti ti-x"></i> Clear selection
                 </button>
@@ -177,6 +180,11 @@
                                     onclick="openIndexAliases('{{ index.index }}')"
                                     title="Edit aliases">
                                 <i class="ti ti-tags"></i>
+                            </button>
+                            <button class="btn btn-sm btn-icon btn-ghost-success"
+                                    onclick="openNewMapping('{{ index.index }}')"
+                                    title="New mapping">
+                                <i class="ti ti-file-plus"></i>
                             </button>
                         </div>
                     </td>

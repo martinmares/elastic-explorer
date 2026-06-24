@@ -6,9 +6,10 @@ use axum::{
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 use std::sync::Arc;
 use askama::Template;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
+use crate::handlers::endpoints::{AppState, default_index_pattern, get_active_endpoint, get_endpoint_password};
 use crate::templates::{IndicesTemplate, IndicesTableTemplate, IndexDetailTemplate, PageContext};
 use crate::es::EsClient;
 use crate::models::{IndexAlias, IndexInfo, IndicesListData, AliasInfo, IndexDetail};
@@ -215,10 +216,13 @@ pub async fn list_indices(
     }
     // Načti filtr z cookies, pokud není zadán v query (použij pouze když je defaultní "*")
     let filter_cookie_name = format!("indices_filter_{}", endpoint.id);
-    if query.filter == "*"
-        && let Some(cookie) = jar.get(&filter_cookie_name) {
+    if query.filter == "*" {
+        if let Some(cookie) = jar.get(&filter_cookie_name) {
             query.filter = cookie.value().to_string();
+        } else if let Some(default_pattern) = default_index_pattern(endpoint) {
+            query.filter = default_pattern;
         }
+    }
     let per_page_cookie_name = format!("indices_per_page_{}", endpoint.id);
     if query.per_page == default_per_page()
         && let Some(cookie) = jar.get(&per_page_cookie_name) {
@@ -358,7 +362,7 @@ pub async fn indices_summary(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let filter = if includes.len() == 1 && includes[0] == "*" {
-        "*".to_string()
+        default_index_pattern(endpoint).unwrap_or_else(|| "*".to_string())
     } else {
         includes.join(",")
     };
@@ -790,6 +794,37 @@ pub struct IndexMetrics {
     pub size: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct NewMappingPrepareResponse {
+    pub source_index: String,
+    pub new_index: String,
+    pub shards: u32,
+    pub replicas: u32,
+    pub settings: String,
+    pub mapping: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NewMappingCreateRequest {
+    pub new_index: String,
+    pub alias: Option<String>,
+    pub shards: u32,
+    pub replicas: u32,
+    #[serde(default)]
+    pub settings: serde_json::Value,
+    pub mapping: serde_json::Value,
+}
+
+fn portable_index_settings(index_settings: &serde_json::Value) -> serde_json::Value {
+    let mut result = serde_json::Map::new();
+    for key in ["analysis", "similarity", "sort", "routing"] {
+        if let Some(value) = index_settings.get(key) {
+            result.insert(key.to_string(), value.clone());
+        }
+    }
+    serde_json::Value::Object(result)
+}
+
 /// GET /indices/metrics - Vrátí docs a size pro vybrané indexy
 pub async fn indices_metrics(
     State(state): State<Arc<AppState>>,
@@ -844,6 +879,129 @@ pub async fn indices_metrics(
     Ok(Json(metrics))
 }
 
+/// GET /indices/{index_name}/new-mapping - Pripravi mapping pro vytvoreni noveho indexu
+pub async fn new_mapping_prepare(
+    State(state): State<Arc<AppState>>,
+    jar: CookieJar,
+    Path(index_name): Path<String>,
+) -> Result<Json<NewMappingPrepareResponse>, (StatusCode, String)> {
+    let active_endpoint = get_active_endpoint(&state, &jar).await;
+    let endpoint = active_endpoint.ok_or_else(|| (StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()))?;
+
+    let password = get_endpoint_password(&state, &endpoint).await;
+    let client = EsClient::new(
+        endpoint.url.clone(),
+        endpoint.insecure,
+        endpoint.username.clone(),
+        password,
+    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mapping_path = format!("/{}/_mapping", index_name);
+    let mapping_response: serde_json::Value = client.get(&mapping_path)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let mapping = mapping_response
+        .get(&index_name)
+        .and_then(|v| v.get("mappings"))
+        .cloned()
+        .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "Mapping not found in Elasticsearch response".to_string()))?;
+
+    let settings_path = format!("/{}/_settings", index_name);
+    let settings_response: serde_json::Value = client.get(&settings_path)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let settings = settings_response
+        .get(&index_name)
+        .and_then(|v| v.get("settings"))
+        .and_then(|v| v.get("index"))
+        .unwrap_or(&serde_json::Value::Null);
+    let shards = settings
+        .get("number_of_shards")
+        .and_then(|v| v.as_str())
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(1);
+    let replicas = settings
+        .get("number_of_replicas")
+        .and_then(|v| v.as_str())
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(1);
+    let settings = portable_index_settings(settings);
+
+    let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
+    let new_index = format!("{}-new-{}", index_name, timestamp);
+    let settings = serde_json::to_string_pretty(&settings)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let mapping = serde_json::to_string_pretty(&mapping)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(NewMappingPrepareResponse {
+        source_index: index_name,
+        new_index,
+        shards,
+        replicas,
+        settings,
+        mapping,
+    }))
+}
+
+/// POST /indices/{index_name}/new-mapping - Vytvori novy index s upravenym mappingem
+pub async fn new_mapping_create(
+    State(state): State<Arc<AppState>>,
+    jar: CookieJar,
+    Path(index_name): Path<String>,
+    Json(payload): Json<NewMappingCreateRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let active_endpoint = get_active_endpoint(&state, &jar).await;
+    let endpoint = active_endpoint.ok_or_else(|| (StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()))?;
+
+    let new_index = payload.new_index.trim();
+    if new_index.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "New index name is required".to_string()));
+    }
+
+    let password = get_endpoint_password(&state, &endpoint).await;
+    let client = EsClient::new(
+        endpoint.url.clone(),
+        endpoint.insecure,
+        endpoint.username.clone(),
+        password,
+    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mut settings = match payload.settings {
+        serde_json::Value::Object(map) => map,
+        _ => {
+            return Err((StatusCode::BAD_REQUEST, "Settings must be a JSON object".to_string()));
+        }
+    };
+    settings.insert("number_of_shards".to_string(), serde_json::Value::from(payload.shards));
+    settings.insert("number_of_replicas".to_string(), serde_json::Value::from(payload.replicas));
+
+    let mut body = serde_json::json!({
+        "settings": {
+            "index": serde_json::Value::Object(settings)
+        },
+        "mappings": payload.mapping
+    });
+
+    if let Some(alias) = payload.alias.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        body["aliases"] = serde_json::json!({
+            alias: {}
+        });
+    }
+
+    let path = format!("/{}", urlencoding::encode(new_index));
+    let response: serde_json::Value = client.put(&path, body)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    tracing::info!("Created index {} from mapping of {}", new_index, index_name);
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "index": new_index,
+        "response": response
+    })))
+}
+
 async fn load_indices_data(
     state: &AppState,
     endpoint: &crate::db::models::Endpoint,
@@ -886,8 +1044,32 @@ async fn load_indices_data(
     }
 
     // Načti aliasy
-    let aliases_path = "/_cat/aliases?format=json&h=alias,index,is_write_index";
-    let aliases: Vec<AliasInfo> = client.get(aliases_path).await.unwrap_or_default();
+    let aliases: Vec<AliasInfo> = if !indices.is_empty() {
+        let alias_scope = indices.iter()
+            .map(|idx| idx.index.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        let aliases_path = format!("/{}/_alias?format=json", alias_scope);
+        let aliases_response: serde_json::Value = client.get(&aliases_path).await.unwrap_or_default();
+        let mut aliases = Vec::new();
+        if let Some(indices_map) = aliases_response.as_object() {
+            for (index_name, index_data) in indices_map {
+                let Some(alias_map) = index_data.get("aliases").and_then(|v| v.as_object()) else {
+                    continue;
+                };
+                for (alias_name, alias_meta) in alias_map {
+                    aliases.push(AliasInfo {
+                        alias: alias_name.clone(),
+                        index: index_name.clone(),
+                        is_write_index: alias_meta.get("is_write_index").and_then(|v| v.as_bool()).map(|v| v.to_string()),
+                    });
+                }
+            }
+        }
+        aliases
+    } else {
+        Vec::new()
+    };
 
     // Vytvoř mapu index -> seznam aliasů
     let mut aliases_map: HashMap<String, Vec<IndexAlias>> = HashMap::new();
@@ -1167,10 +1349,16 @@ pub struct BulkOperationResponse {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct BulkOperationQuery {
+    pub replicas: Option<u32>,
+}
+
 /// POST /indices/bulk/{action}/{index_name} - Provede bulk operaci na indexu
 pub async fn bulk_operation(
     State(state): State<Arc<AppState>>,
     jar: CookieJar,
+    Query(query): Query<BulkOperationQuery>,
     axum::extract::Path((action, index_name)): axum::extract::Path<(String, String)>,
 ) -> Result<Json<BulkOperationResponse>, (StatusCode, Json<BulkOperationResponse>)> {
     let active_endpoint = get_active_endpoint(&state, &jar).await;
@@ -1218,6 +1406,17 @@ pub async fn bulk_operation(
         "close" => perform_close_index(&client, &index_name).await,
         "open" => perform_open_index(&client, &index_name).await,
         "refresh" => perform_refresh_index(&client, &index_name).await,
+        "replicas" => {
+            let replicas = query.replicas.ok_or_else(|| (
+                StatusCode::BAD_REQUEST,
+                Json(BulkOperationResponse {
+                    success: false,
+                    message: None,
+                    error: Some("Missing replicas parameter".to_string()),
+                }),
+            ))?;
+            perform_set_replicas(&client, &index_name, replicas).await
+        }
         _ => Err(anyhow::anyhow!("Unknown action: {}", action)),
     };
 
@@ -1260,4 +1459,15 @@ async fn perform_refresh_index(client: &EsClient, index_name: &str) -> anyhow::R
     let path = format!("/{}/_refresh", index_name);
     let _response: serde_json::Value = client.post(&path, serde_json::json!({})).await?;
     Ok("Index refreshnut".to_string())
+}
+
+async fn perform_set_replicas(client: &EsClient, index_name: &str, replicas: u32) -> anyhow::Result<String> {
+    let path = format!("/{}/_settings", index_name);
+    let body = serde_json::json!({
+        "index": {
+            "number_of_replicas": replicas
+        }
+    });
+    let _response: serde_json::Value = client.put(&path, body).await?;
+    Ok(format!("Replicas set to {}", replicas))
 }
