@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use askama::Template;
 use serde::{Deserialize, Serialize};
 
-use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
+use crate::handlers::endpoints::{AppState, default_index_pattern, get_active_endpoint, get_endpoint_password};
 use crate::templates::{ShardsTemplate, PageContext};
 use crate::es::EsClient;
 use crate::utils::{generate_index_color, shard_state_color, get_text_color_for_background};
@@ -179,6 +179,7 @@ pub async fn shards_page(
             let cookie_name = format!("indices_filter_{}", endpoint.id);
             jar.get(&cookie_name)
                 .map(|c| c.value().to_string())
+                .or_else(|| default_index_pattern(endpoint))
                 .unwrap_or_else(|| "*".to_string())
         } else {
             "*".to_string()

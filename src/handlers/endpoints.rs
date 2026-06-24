@@ -20,6 +20,13 @@ pub struct AppState {
     pub stateless_password: Option<String>,
 }
 
+pub fn default_index_pattern(endpoint: &crate::db::models::Endpoint) -> Option<String> {
+    endpoint.index_pattern.as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+}
+
 fn escape_attr(value: &str) -> String {
     value
         .replace('&', "&amp;")
@@ -62,8 +69,19 @@ fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: O
         } else {
             String::new()
         };
+        let scope_badge = if let Some(pattern) = &ep.index_pattern {
+            format!(
+                r#"<span class="badge bg-purple-lt ms-2" title="Index scope">
+                                        <i class="ti ti-filter"></i> {}
+                                    </span>"#,
+                escape_attr(pattern)
+            )
+        } else {
+            String::new()
+        };
 
         let username_attr = ep.username.as_deref().unwrap_or("");
+        let index_pattern_attr = ep.index_pattern.as_deref().unwrap_or("");
         format!(r##"<div class="list-group-item">
                 <div class="row align-items-center">
                     <div class="col-auto">
@@ -76,6 +94,7 @@ fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: O
                         </div>
                         <div class="text-muted">
                             <code>{}</code>
+                            {}
                             {}
                             {}
                         </div>
@@ -96,6 +115,7 @@ fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: O
                                 data-endpoint-name="{}"
                                 data-endpoint-url="{}"
                                 data-endpoint-insecure="{}"
+                                data-endpoint-index-pattern="{}"
                                 data-endpoint-username="{}"
                                 title="Edit endpoint">
                                 <i class="ti ti-pencil"></i>
@@ -123,6 +143,7 @@ fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: O
             ep.url,
             insecure_badge,
             username_badge,
+            scope_badge,
             ep.id,
             ep.id,
             ep.id,
@@ -131,6 +152,7 @@ fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: O
             escape_attr(&ep.name),
             escape_attr(&ep.url),
             ep.insecure,
+            escape_attr(index_pattern_attr),
             escape_attr(username_attr),
             ep.id,
             ep.id,
@@ -146,6 +168,7 @@ pub struct CreateEndpointForm {
     name: String,
     url: String,
     insecure: Option<String>,
+    index_pattern: Option<String>,
     username: Option<String>,
     password: Option<String>,
 }
@@ -155,6 +178,7 @@ pub struct UpdateEndpointForm {
     name: String,
     url: String,
     insecure: Option<String>,
+    index_pattern: Option<String>,
     username: Option<String>,
     password: Option<String>,
 }
@@ -211,6 +235,7 @@ pub async fn create_endpoint(
         name: form.name,
         url: form.url,
         insecure: form.insecure.is_some(),
+        index_pattern: form.index_pattern.filter(|s| !s.trim().is_empty()),
         username: if form.username.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
             None
         } else {
@@ -256,6 +281,7 @@ pub async fn update_endpoint(
         name: Some(form.name),
         url: Some(form.url),
         insecure: Some(form.insecure.is_some()),
+        index_pattern: form.index_pattern.filter(|s| !s.trim().is_empty()),
         username: if form.username.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
             None
         } else {

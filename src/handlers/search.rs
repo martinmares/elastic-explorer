@@ -8,7 +8,7 @@ use std::sync::Arc;
 use askama::Template;
 use serde::{Deserialize, Serialize};
 
-use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
+use crate::handlers::endpoints::{AppState, default_index_pattern, get_active_endpoint, get_endpoint_password};
 use crate::templates::{SearchTemplate, SearchResultsTemplate, PageContext};
 use crate::es::EsClient;
 
@@ -190,9 +190,14 @@ pub async fn search_page(
     };
 
     if query.index_pattern.is_empty()
-        && let Some(cookie_value) = jar.get(&pattern_cookie_name) {
+    {
+        if let Some(cookie_value) = jar.get(&pattern_cookie_name) {
             query.index_pattern = cookie_value.value().to_string();
-        }
+        } else if let Some(ref endpoint) = active_endpoint
+            && let Some(default_pattern) = default_index_pattern(endpoint) {
+                query.index_pattern = default_pattern;
+            }
+    }
     if query.query.is_empty()
         && let Some(cookie_value) = jar.get(&query_cookie_name) {
             query.query = cookie_value.value().to_string();

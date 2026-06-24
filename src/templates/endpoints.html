@@ -70,6 +70,11 @@
                                         <i class="ti ti-shield-off"></i> Insecure
                                     </span>
                                     {% endif %}
+                                    {% if endpoint.index_pattern.is_some() %}
+                                    <span class="badge bg-purple-lt ms-2" title="Index scope">
+                                        <i class="ti ti-filter"></i> {{ endpoint.index_pattern.as_ref().unwrap() }}
+                                    </span>
+                                    {% endif %}
                                     {% if endpoint.username.is_some() %}
                                     <span class="badge bg-blue-lt ms-2">
                                         <i class="ti ti-user"></i> {{ endpoint.username.as_ref().unwrap() }}
@@ -96,6 +101,7 @@
                                         data-endpoint-name="{{ endpoint.name }}"
                                         data-endpoint-url="{{ endpoint.url }}"
                                         data-endpoint-insecure="{{ endpoint.insecure }}"
+                                        data-endpoint-index-pattern="{{ endpoint.index_pattern.as_deref().unwrap_or("") }}"
                                         data-endpoint-username="{{ endpoint.username.as_deref().unwrap_or("") }}"
                                         title="Edit endpoint">
                                         <i class="ti ti-pencil"></i>
@@ -150,6 +156,11 @@
                             <input class="form-check-input" type="checkbox" name="insecure">
                             <span class="form-check-label">Allow self-signed certificates (insecure)</span>
                         </label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Index Scope</label>
+                        <input type="text" class="form-control" name="index_pattern" placeholder="e.g. o2-kip-*">
+                        <small class="form-hint">Optional default pattern for ACL-limited endpoints. Used as the initial filter in Indices/Search/Shards.</small>
                     </div>
                     <hr>
                     <h3 class="card-title">Basic Authentication</h3>
@@ -230,6 +241,7 @@
         form.querySelector('[name="name"]').value = button.dataset.endpointName || '';
         form.querySelector('[name="url"]').value = button.dataset.endpointUrl || '';
         form.querySelector('[name="insecure"]').checked = button.dataset.endpointInsecure === 'true';
+        form.querySelector('[name="index_pattern"]').value = button.dataset.endpointIndexPattern || '';
         form.querySelector('[name="username"]').value = button.dataset.endpointUsername || '';
         form.querySelector('[name="password"]').value = '';
         title.textContent = 'Edit Elasticsearch Endpoint';

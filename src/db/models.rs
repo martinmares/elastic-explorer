@@ -7,6 +7,7 @@ pub struct Endpoint {
     pub name: String,
     pub url: String,
     pub insecure: bool,
+    pub index_pattern: Option<String>,
     pub username: Option<String>,
     pub password_encrypted: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -18,6 +19,7 @@ pub struct CreateEndpoint {
     pub name: String,
     pub url: String,
     pub insecure: bool,
+    pub index_pattern: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>, // Toto se uloží šifrovaně do DB
 }
@@ -28,6 +30,7 @@ pub struct UpdateEndpoint {
     pub name: Option<String>,
     pub url: Option<String>,
     pub insecure: Option<bool>,
+    pub index_pattern: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>, // Pokud je Some, aktualizuj šifrované heslo
 }

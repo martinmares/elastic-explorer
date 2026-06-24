@@ -86,6 +86,17 @@ impl Database {
                 .context("Failed to run migration 004")?;
         }
 
+        let has_index_pattern_column = columns.iter().any(|row| {
+            let name: String = row.get("name");
+            name == "index_pattern"
+        });
+        if !has_index_pattern_column {
+            sqlx::query("ALTER TABLE endpoints ADD COLUMN index_pattern TEXT")
+                .execute(pool)
+                .await
+                .context("Failed to add endpoints.index_pattern column")?;
+        }
+
         Self::repair_console_history_schema(pool).await?;
 
         tracing::info!("Migrations completed successfully");
@@ -177,12 +188,13 @@ COMMIT;
         let mut tx = self.pool.begin().await?;
 
         let result = sqlx::query(
-            "INSERT INTO endpoints (name, url, insecure, username, password_encrypted)
-             VALUES (?, ?, ?, ?, ?)"
+            "INSERT INTO endpoints (name, url, insecure, index_pattern, username, password_encrypted)
+             VALUES (?, ?, ?, ?, ?, ?)"
         )
         .bind(&endpoint.name)
         .bind(&endpoint.url)
         .bind(endpoint.insecure)
+        .bind(&endpoint.index_pattern)
         .bind(&endpoint.username)
         .bind::<Option<String>>(None)
         .execute(&mut *tx)
@@ -229,12 +241,13 @@ COMMIT;
 
         sqlx::query(
             "UPDATE endpoints
-             SET name = ?, url = ?, insecure = ?, username = ?, updated_at = CURRENT_TIMESTAMP
+             SET name = ?, url = ?, insecure = ?, index_pattern = ?, username = ?, updated_at = CURRENT_TIMESTAMP
              WHERE id = ?"
         )
         .bind(name)
         .bind(url)
         .bind(insecure)
+        .bind(endpoint.index_pattern)
         .bind(endpoint.username)
         .bind(id)
         .execute(&mut *tx)
