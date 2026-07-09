@@ -19,6 +19,7 @@ use crate::templates::{EndpointsTemplate, PageContext};
 pub struct AppState {
     pub db: Option<Database>,
     pub base_path: String,
+    pub logout_url: Option<String>,
     pub stateless_endpoint: Option<crate::db::models::Endpoint>,
     pub stateless_password: Option<String>,
 }
@@ -225,7 +226,11 @@ pub async fn list_endpoints(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let active_endpoint = get_active_endpoint(&state, &jar).await;
-    let ctx = PageContext::new(active_endpoint, state.base_path.clone());
+    let ctx = PageContext::new(
+        active_endpoint,
+        state.base_path.clone(),
+        state.logout_url.clone(),
+    );
 
     let template = EndpointsTemplate { endpoints, ctx };
 

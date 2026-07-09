@@ -90,7 +90,11 @@ pub async fn console_page(
 ) -> Result<Html<String>, (StatusCode, String)> {
     let active_endpoint = get_active_endpoint(&state, &jar).await;
 
-    let ctx = PageContext::new(active_endpoint.clone(), state.base_path.clone());
+    let ctx = PageContext::new(
+        active_endpoint.clone(),
+        state.base_path.clone(),
+        state.logout_url.clone(),
+    );
 
     // Načti historii (poslední 50 záznamů)
     let (history_records, endpoints) = if let Some(db) = &state.db {

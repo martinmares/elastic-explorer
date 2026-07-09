@@ -25,11 +25,11 @@ use handlers::AppState;
 #[command(about = "Elasticsearch cluster explorer", long_about = None)]
 struct Args {
     /// Host pro HTTP server
-    #[arg(long, default_value = "127.0.0.1")]
+    #[arg(long, env = "HOST", default_value = "127.0.0.1")]
     host: String,
 
     /// Port pro HTTP server
-    #[arg(short, long, default_value = "8080")]
+    #[arg(short, long, env = "PORT", default_value = "8080")]
     port: u16,
 
     /// Neotvírat prohlížeč automaticky
@@ -37,8 +37,12 @@ struct Args {
     no_open: bool,
 
     /// Base path when running behind reverse proxy (e.g. /elastic-explorer)
-    #[arg(long, default_value = "/")]
+    #[arg(long, env = "BASE_PATH", default_value = "/")]
     base_path: String,
+
+    /// Logout URL exposed by an upstream authentication proxy
+    #[arg(long, env = "LOGOUT_URL")]
+    logout_url: Option<String>,
 
     /// Stateless mode: no local storage, use single connection from CLI/.env
     #[arg(long, default_value_t = false)]
@@ -95,7 +99,6 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let _ = dotenvy::dotenv();
     // Inicializuj logging
     tracing_subscriber::registry()
         .with(
@@ -144,9 +147,16 @@ async fn main() -> Result<()> {
         None
     };
 
+    let logout_url = args.logout_url.as_deref().map(normalize_logout_url);
+    tracing::info!(
+        logout_url = logout_url.as_deref().unwrap_or("-"),
+        "auth proxy logout URL"
+    );
+
     let state = Arc::new(AppState {
         db,
         base_path: base_path.clone(),
+        logout_url,
         stateless_endpoint,
         stateless_password: if args.stateless {
             args.conf_es_password.clone()
@@ -290,4 +300,14 @@ fn normalize_base_path(input: &str) -> String {
         path.pop();
     }
     path
+}
+
+fn normalize_logout_url(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.starts_with('/') || trimmed.starts_with("http://") || trimmed.starts_with("https://")
+    {
+        trimmed.to_string()
+    } else {
+        format!("/{trimmed}")
+    }
 }

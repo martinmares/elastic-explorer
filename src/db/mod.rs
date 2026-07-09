@@ -1,7 +1,7 @@
 pub mod models;
 
 use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{Aes256Gcm, Key, Nonce};
+use aes_gcm::{Aes256Gcm, Nonce};
 use anyhow::{Context, Result};
 use base64::Engine;
 use sqlx::Row;
@@ -295,11 +295,13 @@ COMMIT;
     }
 
     fn encrypt_password(&self, password: &str) -> Result<String> {
-        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
+        let cipher = Aes256Gcm::new_from_slice(&self.encryption_key)
+            .context("Failed to initialize password cipher")?;
         let nonce_bytes: [u8; 12] = rand::random();
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce =
+            Nonce::try_from(&nonce_bytes[..]).context("Failed to initialize encryption nonce")?;
         let ciphertext = cipher
-            .encrypt(nonce, password.as_bytes())
+            .encrypt(&nonce, password.as_bytes())
             .map_err(|_| anyhow::anyhow!("Failed to encrypt password"))?;
 
         let mut payload = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
@@ -316,10 +318,12 @@ COMMIT;
             return Err(anyhow::anyhow!("Encrypted password payload is too short"));
         }
         let (nonce_bytes, ciphertext) = payload.split_at(12);
-        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.encryption_key));
-        let nonce = Nonce::from_slice(nonce_bytes);
+        let cipher = Aes256Gcm::new_from_slice(&self.encryption_key)
+            .context("Failed to initialize password cipher")?;
+        let nonce =
+            Nonce::try_from(nonce_bytes).context("Failed to initialize encryption nonce")?;
         let plaintext = cipher
-            .decrypt(nonce, ciphertext)
+            .decrypt(&nonce, ciphertext)
             .map_err(|_| anyhow::anyhow!("Failed to decrypt password"))?;
         let password =
             String::from_utf8(plaintext).context("Decrypted password is not valid UTF-8")?;

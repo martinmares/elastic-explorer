@@ -183,7 +183,11 @@ pub async fn search_page(
     let is_htmx = headers.get("HX-Request").is_some();
     let active_endpoint = get_active_endpoint(&state, &jar).await;
 
-    let ctx = PageContext::new(active_endpoint.clone(), state.base_path.clone());
+    let ctx = PageContext::new(
+        active_endpoint.clone(),
+        state.base_path.clone(),
+        state.logout_url.clone(),
+    );
 
     // Pokud není zadán index pattern nebo query, zkus načíst z cookie
     let mut query = query;

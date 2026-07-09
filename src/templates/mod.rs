@@ -7,14 +7,26 @@ pub struct PageContext {
     pub active_endpoint: Option<Endpoint>,
     pub version: &'static str,
     pub base_path: String,
+    pub logout_url: Option<String>,
 }
 
 impl PageContext {
-    pub fn new(active_endpoint: Option<Endpoint>, base_path: String) -> Self {
+    pub fn new(
+        active_endpoint: Option<Endpoint>,
+        base_path: String,
+        logout_url: Option<String>,
+    ) -> Self {
+        tracing::info!(
+            base_path = %base_path,
+            logout_url = logout_url.as_deref().unwrap_or("-"),
+            active_endpoint = active_endpoint.as_ref().map(|e| e.name.as_str()).unwrap_or("-"),
+            "askama page context"
+        );
         Self {
             active_endpoint,
             version: env!("CARGO_PKG_VERSION"),
             base_path,
+            logout_url,
         }
     }
 }

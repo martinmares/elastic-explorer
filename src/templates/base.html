@@ -67,6 +67,14 @@
                     {% endif %}
                 </h1>
                 <div class="navbar-nav flex-row order-md-last">
+                    {% if ctx.logout_url.is_some() %}
+                    <div class="nav-item d-none d-md-flex">
+                        <a href="{{ ctx.logout_url.as_ref().unwrap() }}" class="nav-link px-2" title="Sign out" hx-boost="false">
+                            <i class="ti ti-logout me-1"></i>
+                            <span class="d-none d-lg-inline">Logout</span>
+                        </a>
+                    </div>
+                    {% endif %}
                     <!-- Theme toggle -->
                     <div class="nav-item d-none d-md-flex" style="position: relative;">
                         <a href="#" class="nav-link px-0" id="theme-toggle" tabindex="-1" aria-label="Přepnout theme">
@@ -222,6 +230,7 @@
             const prefix = (value) => {
                 if (!value || typeof value !== "string") return value;
                 if (!value.startsWith("/")) return value;
+                if (value.startsWith("/_auth/")) return value;
                 if (value.startsWith(basePath + "/")) return value;
                 return basePath + value;
             };

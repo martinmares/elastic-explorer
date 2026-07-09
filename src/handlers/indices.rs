@@ -264,7 +264,11 @@ pub async fn list_indices(
         }
     };
 
-    let ctx = PageContext::new(active_endpoint, state.base_path.clone());
+    let ctx = PageContext::new(
+        active_endpoint,
+        state.base_path.clone(),
+        state.logout_url.clone(),
+    );
     let template = IndicesTemplate { ctx, data };
 
     template
@@ -322,7 +326,11 @@ pub async fn indices_table(
         }
     };
 
-    let ctx = PageContext::new(active_endpoint, state.base_path.clone());
+    let ctx = PageContext::new(
+        active_endpoint,
+        state.base_path.clone(),
+        state.logout_url.clone(),
+    );
     let template = IndicesTableTemplate { ctx, data };
 
     template

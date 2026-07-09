@@ -42,7 +42,11 @@ pub async fn dashboard(
         None
     };
 
-    let ctx = PageContext::new(active_endpoint, state.base_path.clone());
+    let ctx = PageContext::new(
+        active_endpoint,
+        state.base_path.clone(),
+        state.logout_url.clone(),
+    );
     let template = DashboardTemplate {
         endpoint_name,
         ctx,
