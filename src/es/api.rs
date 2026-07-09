@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::client::EsClient;
 
@@ -91,7 +91,10 @@ impl EsClient {
 
     /// Získá seznam indexů (cat API)
     pub async fn get_indices(&self) -> Result<Vec<IndexInfo>> {
-        self.get("/_cat/indices?format=json&h=health,status,index,uuid,pri,rep,docs.count,store.size").await
+        self.get(
+            "/_cat/indices?format=json&h=health,status,index,uuid,pri,rep,docs.count,store.size",
+        )
+        .await
     }
 
     /// Získá detailní info o indexu
@@ -131,9 +134,12 @@ impl EsClient {
     pub async fn search_sql(&self, query: &str) -> Result<Value> {
         // Zkontroluj verzi
         if let Some(version) = self.version()
-            && version.major < 7 {
-                return Err(anyhow::anyhow!("SQL API requires Elasticsearch 7.x or higher"));
-            }
+            && version.major < 7
+        {
+            return Err(anyhow::anyhow!(
+                "SQL API requires Elasticsearch 7.x or higher"
+            ));
+        }
 
         let body = json!({
             "query": query
@@ -177,9 +183,12 @@ impl EsClient {
     #[allow(dead_code)]
     pub async fn get_component_templates(&self) -> Result<Value> {
         if let Some(version) = self.version()
-            && (version.major >= 8 || (version.major == 7 && version.minor >= 8)) {
-                return self.get("/_component_template").await;
-            }
-        Err(anyhow::anyhow!("Component templates require Elasticsearch 7.8 or higher"))
+            && (version.major >= 8 || (version.major == 7 && version.minor >= 8))
+        {
+            return self.get("/_component_template").await;
+        }
+        Err(anyhow::anyhow!(
+            "Component templates require Elasticsearch 7.8 or higher"
+        ))
     }
 }

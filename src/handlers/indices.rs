@@ -1,28 +1,32 @@
+use askama::Template;
 use axum::{
-    extract::{Path, Query, State},
-    response::{Html, Json},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
+    response::{Html, Json},
 };
 use axum_extra::extract::{CookieJar, cookie::Cookie};
-use std::sync::Arc;
-use askama::Template;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
-use crate::handlers::endpoints::{AppState, default_index_pattern, get_active_endpoint, get_endpoint_password};
-use crate::templates::{IndicesTemplate, IndicesTableTemplate, IndexDetailTemplate, PageContext};
+use crate::auth::{ProxyIdentity, Role};
 use crate::es::EsClient;
-use crate::models::{IndexAlias, IndexInfo, IndicesListData, AliasInfo, IndexDetail};
+use crate::handlers::endpoints::{
+    AppState, default_index_pattern, get_active_endpoint, get_endpoint_password,
+};
+use crate::models::{AliasInfo, IndexAlias, IndexDetail, IndexInfo, IndicesListData};
+use crate::templates::{IndexDetailTemplate, IndicesTableTemplate, IndicesTemplate, PageContext};
 use crate::utils::{format_bytes, format_number, parse_size_to_bytes};
 use std::collections::HashMap;
 
 fn alias_operation_error_message(response: &serde_json::Value) -> Option<String> {
     if response.get("errors").and_then(|v| v.as_bool()) == Some(true) {
         return Some(
-            response.get("action_results")
+            response
+                .get("action_results")
                 .and_then(|v| serde_json::to_string_pretty(v).ok())
                 .or_else(|| serde_json::to_string_pretty(response).ok())
-                .unwrap_or_else(|| "Alias operation failed".to_string())
+                .unwrap_or_else(|| "Alias operation failed".to_string()),
         );
     }
 
@@ -154,7 +158,8 @@ async fn fetch_alias_backing_indices(
     alias_name: &str,
 ) -> Result<Vec<(String, bool)>, (StatusCode, String)> {
     let alias_details_path = format!("/_alias/{}", alias_name);
-    let alias_details: serde_json::Value = client.get(&alias_details_path)
+    let alias_details: serde_json::Value = client
+        .get(&alias_details_path)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -169,7 +174,10 @@ async fn fetch_alias_backing_indices(
             };
             backing_indices.push((
                 backing_index.clone(),
-                alias_meta.get("is_write_index").and_then(|v| v.as_bool()).unwrap_or(false),
+                alias_meta
+                    .get("is_write_index")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
             ));
         }
     }
@@ -183,16 +191,19 @@ async fn fetch_index_alias_names(
     index_name: &str,
 ) -> Result<Vec<String>, (StatusCode, String)> {
     let aliases_path = format!("/{}/_alias", index_name);
-    let aliases_response: serde_json::Value = client.get(&aliases_path)
+    let aliases_response: serde_json::Value = client
+        .get(&aliases_path)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let mut alias_names = Vec::new();
-    if let Some(aliases_map) = aliases_response.get(index_name)
+    if let Some(aliases_map) = aliases_response
+        .get(index_name)
         .and_then(|index_obj| index_obj.get("aliases"))
-        .and_then(|aliases_obj| aliases_obj.as_object()) {
-            alias_names = aliases_map.keys().cloned().collect();
-        }
+        .and_then(|aliases_obj| aliases_obj.as_object())
+    {
+        alias_names = aliases_map.keys().cloned().collect();
+    }
     alias_names.sort();
     Ok(alias_names)
 }
@@ -206,7 +217,10 @@ pub async fn list_indices(
     let active_endpoint = get_active_endpoint(&state, &jar).await;
 
     if active_endpoint.is_none() {
-        return Err((StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "No active endpoint selected".to_string(),
+        ));
     }
 
     let endpoint = active_endpoint.as_ref().unwrap();
@@ -225,17 +239,20 @@ pub async fn list_indices(
     }
     let per_page_cookie_name = format!("indices_per_page_{}", endpoint.id);
     if query.per_page == default_per_page()
-        && let Some(cookie) = jar.get(&per_page_cookie_name) {
-            if let Ok(value) = cookie.value().parse::<usize>() {
-                query.per_page = value;
-            }
+        && let Some(cookie) = jar.get(&per_page_cookie_name)
+    {
+        if let Ok(value) = cookie.value().parse::<usize>() {
+            query.per_page = value;
         }
+    }
 
     // Načti data s timeoutem
     let data = match tokio::time::timeout(
         tokio::time::Duration::from_secs(10),
-        load_indices_data(&state, endpoint, &query)
-    ).await {
+        load_indices_data(&state, endpoint, &query),
+    )
+    .await
+    {
         Ok(Ok(d)) => Some(d),
         Ok(Err(e)) => {
             tracing::error!("Failed to load indices: {}", e);
@@ -250,7 +267,8 @@ pub async fn list_indices(
     let ctx = PageContext::new(active_endpoint, state.base_path.clone());
     let template = IndicesTemplate { ctx, data };
 
-    template.render()
+    template
+        .render()
         .map(Html)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
@@ -264,7 +282,10 @@ pub async fn indices_table(
     let active_endpoint = get_active_endpoint(&state, &jar).await;
 
     if active_endpoint.is_none() {
-        return Err((StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "No active endpoint selected".to_string(),
+        ));
     }
 
     let endpoint = active_endpoint.as_ref().unwrap();
@@ -286,8 +307,10 @@ pub async fn indices_table(
     // Načti data s timeoutem
     let data = match tokio::time::timeout(
         tokio::time::Duration::from_secs(10),
-        load_indices_data(&state, endpoint, &query)
-    ).await {
+        load_indices_data(&state, endpoint, &query),
+    )
+    .await
+    {
         Ok(Ok(d)) => Some(d),
         Ok(Err(e)) => {
             tracing::error!("Failed to load indices: {}", e);
@@ -302,7 +325,8 @@ pub async fn indices_table(
     let ctx = PageContext::new(active_endpoint, state.base_path.clone());
     let template = IndicesTableTemplate { ctx, data };
 
-    template.render()
+    template
+        .render()
         .map(|html| (jar, Html(html)))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
@@ -339,7 +363,10 @@ pub async fn indices_summary(
     let active_endpoint = get_active_endpoint(&state, &jar).await;
 
     if active_endpoint.is_none() {
-        return Err((StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "No active endpoint selected".to_string(),
+        ));
     }
 
     let endpoint = active_endpoint.as_ref().unwrap();
@@ -356,9 +383,12 @@ pub async fn indices_summary(
         endpoint.insecure,
         endpoint.username.clone(),
         password,
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    client.detect_version().await
+    client
+        .detect_version()
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let filter = if includes.len() == 1 && includes[0] == "*" {
@@ -369,9 +399,13 @@ pub async fn indices_summary(
     let path = if filter == "*" {
         "/_cat/indices?format=json&bytes=b&h=health,status,index,uuid,pri,rep,docs.count,docs.deleted,store.size,pri.store.size,creation.date.string".to_string()
     } else {
-        format!("/_cat/indices/{}?format=json&bytes=b&h=health,status,index,uuid,pri,rep,docs.count,docs.deleted,store.size,pri.store.size,creation.date.string", filter)
+        format!(
+            "/_cat/indices/{}?format=json&bytes=b&h=health,status,index,uuid,pri,rep,docs.count,docs.deleted,store.size,pri.store.size,creation.date.string",
+            filter
+        )
     };
-    let mut indices: Vec<IndexInfo> = client.get(&path)
+    let mut indices: Vec<IndexInfo> = client
+        .get(&path)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -382,7 +416,8 @@ pub async fn indices_summary(
         indices.retain(|idx| !excludes.iter().any(|pat| matches_pattern(&idx.index, pat)));
     }
 
-    let aliases: Vec<AliasInfo> = client.get("/_cat/aliases?format=json")
+    let aliases: Vec<AliasInfo> = client
+        .get("/_cat/aliases?format=json")
         .await
         .unwrap_or_default();
 
@@ -455,10 +490,7 @@ pub async fn indices_summary(
     }
 
     // 2) indexy matchující pattern, které nejsou pokryté aliasy
-    let mut matched_indices: Vec<String> = indices
-        .iter()
-        .map(|idx| idx.index.clone())
-        .collect();
+    let mut matched_indices: Vec<String> = indices.iter().map(|idx| idx.index.clone()).collect();
     matched_indices.sort();
     for idx_name in matched_indices {
         if covered_indices.contains_key(&idx_name) {
@@ -494,7 +526,8 @@ pub async fn indices_summary(
     };
 
     let template = crate::templates::IndicesSummaryTemplate { data };
-    template.render()
+    template
+        .render()
         .map(Html)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
@@ -520,7 +553,12 @@ pub async fn index_aliases(
     Path(index_name): Path<String>,
 ) -> Result<Json<IndexAliasesResponse>, (StatusCode, String)> {
     let active_endpoint = get_active_endpoint(&state, &jar).await;
-    let endpoint = active_endpoint.ok_or_else(|| (StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()))?;
+    let endpoint = active_endpoint.ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            "No active endpoint selected".to_string(),
+        )
+    })?;
 
     let password = get_endpoint_password(&state, &endpoint).await;
     let client = EsClient::new(
@@ -528,25 +566,32 @@ pub async fn index_aliases(
         endpoint.insecure,
         endpoint.username.clone(),
         password,
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let aliases_path = format!("/{}/_alias", index_name);
-    let aliases_response: serde_json::Value = client.get(&aliases_path)
+    let aliases_response: serde_json::Value = client
+        .get(&aliases_path)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let mut alias_names: Vec<String> = Vec::new();
     let mut current_index_write_flags: HashMap<String, bool> = HashMap::new();
-    if let Some(aliases_map) = aliases_response.get(&index_name)
+    if let Some(aliases_map) = aliases_response
+        .get(&index_name)
         .and_then(|index_obj| index_obj.get("aliases"))
-        .and_then(|aliases_obj| aliases_obj.as_object()) {
-            alias_names = aliases_map.keys().map(|k| k.to_string()).collect();
-            for (alias_name, alias_meta) in aliases_map {
-                current_index_write_flags.insert(
-                    alias_name.clone(),
-                    alias_meta.get("is_write_index").and_then(|v| v.as_bool()).unwrap_or(false),
-                );
-            }
+        .and_then(|aliases_obj| aliases_obj.as_object())
+    {
+        alias_names = aliases_map.keys().map(|k| k.to_string()).collect();
+        for (alias_name, alias_meta) in aliases_map {
+            current_index_write_flags.insert(
+                alias_name.clone(),
+                alias_meta
+                    .get("is_write_index")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+            );
+        }
     }
     alias_names.sort();
 
@@ -558,7 +603,8 @@ pub async fn index_aliases(
     }
 
     let alias_details_path = format!("/_alias/{}", alias_names.join(","));
-    let alias_details: serde_json::Value = client.get(&alias_details_path)
+    let alias_details: serde_json::Value = client
+        .get(&alias_details_path)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -592,7 +638,10 @@ pub async fn index_aliases(
             }
         });
         let current_index_is_write = write_target.as_deref() == Some(index_name.as_str())
-            || current_index_write_flags.get(&alias_name).copied().unwrap_or(false);
+            || current_index_write_flags
+                .get(&alias_name)
+                .copied()
+                .unwrap_or(false);
 
         alias_entries.push(IndexAliasEntry {
             alias: alias_name,
@@ -624,7 +673,12 @@ pub async fn index_alias_action(
     Json(payload): Json<AliasActionRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let active_endpoint = get_active_endpoint(&state, &jar).await;
-    let endpoint = active_endpoint.ok_or_else(|| (StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()))?;
+    let endpoint = active_endpoint.ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            "No active endpoint selected".to_string(),
+        )
+    })?;
 
     let password = get_endpoint_password(&state, &endpoint).await;
     let client = EsClient::new(
@@ -632,14 +686,18 @@ pub async fn index_alias_action(
         endpoint.insecure,
         endpoint.username.clone(),
         password,
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let action = payload.action.as_str();
     let mut actions: Vec<serde_json::Value> = Vec::new();
 
     match action {
         "add" => {
-            let alias = payload.alias.clone().filter(|s| !s.is_empty())
+            let alias = payload
+                .alias
+                .clone()
+                .filter(|s| !s.is_empty())
                 .ok_or_else(|| (StatusCode::BAD_REQUEST, "Alias is required".to_string()))?;
 
             if payload.is_write_index == Some(true) {
@@ -652,7 +710,8 @@ pub async fn index_alias_action(
                         }
                     }]
                 });
-                let response: serde_json::Value = client.post("/_aliases", body)
+                let response: serde_json::Value = client
+                    .post("/_aliases", body)
                     .await
                     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -666,7 +725,8 @@ pub async fn index_alias_action(
                     urlencoding::encode(&index_name),
                     urlencoding::encode(&alias)
                 );
-                let response: serde_json::Value = client.put(&add_path, serde_json::json!({}))
+                let response: serde_json::Value = client
+                    .put(&add_path, serde_json::json!({}))
                     .await
                     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -687,7 +747,10 @@ pub async fn index_alias_action(
             return Ok(Json(serde_json::json!({ "success": true })));
         }
         "remove" => {
-            let alias = payload.alias.clone().filter(|s| !s.is_empty())
+            let alias = payload
+                .alias
+                .clone()
+                .filter(|s| !s.is_empty())
                 .ok_or_else(|| (StatusCode::BAD_REQUEST, "Alias is required".to_string()))?;
 
             let remove_path = format!(
@@ -696,7 +759,8 @@ pub async fn index_alias_action(
                 urlencoding::encode(&alias)
             );
 
-            let response: serde_json::Value = client.delete(&remove_path)
+            let response: serde_json::Value = client
+                .delete(&remove_path)
                 .await
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -716,9 +780,15 @@ pub async fn index_alias_action(
             return Ok(Json(serde_json::json!({ "success": true })));
         }
         "rename" => {
-            let alias = payload.alias.clone().filter(|s| !s.is_empty())
+            let alias = payload
+                .alias
+                .clone()
+                .filter(|s| !s.is_empty())
                 .ok_or_else(|| (StatusCode::BAD_REQUEST, "Alias is required".to_string()))?;
-            let new_alias = payload.new_alias.clone().filter(|s| !s.is_empty())
+            let new_alias = payload
+                .new_alias
+                .clone()
+                .filter(|s| !s.is_empty())
                 .ok_or_else(|| (StatusCode::BAD_REQUEST, "New alias is required".to_string()))?;
 
             let backing_indices = fetch_alias_backing_indices(&client, &alias).await?;
@@ -734,14 +804,19 @@ pub async fn index_alias_action(
                     "index": backing_index,
                     "alias": new_alias,
                 });
-                if was_write_index || (backing_index == index_name && payload.is_write_index == Some(true)) {
+                if was_write_index
+                    || (backing_index == index_name && payload.is_write_index == Some(true))
+                {
                     add_action["is_write_index"] = serde_json::Value::Bool(true);
                 }
                 actions.push(serde_json::json!({ "add": add_action }));
             }
         }
         "set_write_index" => {
-            let alias = payload.alias.clone().filter(|s| !s.is_empty())
+            let alias = payload
+                .alias
+                .clone()
+                .filter(|s| !s.is_empty())
                 .ok_or_else(|| (StatusCode::BAD_REQUEST, "Alias is required".to_string()))?;
             let backing_indices = fetch_alias_backing_indices(&client, &alias).await?;
             if backing_indices.is_empty() {
@@ -762,7 +837,8 @@ pub async fn index_alias_action(
     }
 
     let body = serde_json::json!({ "actions": actions });
-    let response: serde_json::Value = client.post("/_aliases", body)
+    let response: serde_json::Value = client
+        .post("/_aliases", body)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -834,7 +910,10 @@ pub async fn indices_metrics(
     let active_endpoint = get_active_endpoint(&state, &jar).await;
 
     if active_endpoint.is_none() {
-        return Err((StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "No active endpoint selected".to_string(),
+        ));
     }
 
     let endpoint = active_endpoint.as_ref().unwrap();
@@ -855,7 +934,8 @@ pub async fn indices_metrics(
         endpoint.insecure,
         endpoint.username.clone(),
         password,
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let path = format!(
         "/_cat/indices/{}?format=json&bytes=b&h=index,docs.count,store.size,creation.date.string",
@@ -886,7 +966,12 @@ pub async fn new_mapping_prepare(
     Path(index_name): Path<String>,
 ) -> Result<Json<NewMappingPrepareResponse>, (StatusCode, String)> {
     let active_endpoint = get_active_endpoint(&state, &jar).await;
-    let endpoint = active_endpoint.ok_or_else(|| (StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()))?;
+    let endpoint = active_endpoint.ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            "No active endpoint selected".to_string(),
+        )
+    })?;
 
     let password = get_endpoint_password(&state, &endpoint).await;
     let client = EsClient::new(
@@ -894,20 +979,28 @@ pub async fn new_mapping_prepare(
         endpoint.insecure,
         endpoint.username.clone(),
         password,
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let mapping_path = format!("/{}/_mapping", index_name);
-    let mapping_response: serde_json::Value = client.get(&mapping_path)
+    let mapping_response: serde_json::Value = client
+        .get(&mapping_path)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let mapping = mapping_response
         .get(&index_name)
         .and_then(|v| v.get("mappings"))
         .cloned()
-        .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "Mapping not found in Elasticsearch response".to_string()))?;
+        .ok_or_else(|| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Mapping not found in Elasticsearch response".to_string(),
+            )
+        })?;
 
     let settings_path = format!("/{}/_settings", index_name);
-    let settings_response: serde_json::Value = client.get(&settings_path)
+    let settings_response: serde_json::Value = client
+        .get(&settings_path)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let settings = settings_response
@@ -952,11 +1045,19 @@ pub async fn new_mapping_create(
     Json(payload): Json<NewMappingCreateRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let active_endpoint = get_active_endpoint(&state, &jar).await;
-    let endpoint = active_endpoint.ok_or_else(|| (StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()))?;
+    let endpoint = active_endpoint.ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            "No active endpoint selected".to_string(),
+        )
+    })?;
 
     let new_index = payload.new_index.trim();
     if new_index.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "New index name is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "New index name is required".to_string(),
+        ));
     }
 
     let password = get_endpoint_password(&state, &endpoint).await;
@@ -965,16 +1066,26 @@ pub async fn new_mapping_create(
         endpoint.insecure,
         endpoint.username.clone(),
         password,
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let mut settings = match payload.settings {
         serde_json::Value::Object(map) => map,
         _ => {
-            return Err((StatusCode::BAD_REQUEST, "Settings must be a JSON object".to_string()));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Settings must be a JSON object".to_string(),
+            ));
         }
     };
-    settings.insert("number_of_shards".to_string(), serde_json::Value::from(payload.shards));
-    settings.insert("number_of_replicas".to_string(), serde_json::Value::from(payload.replicas));
+    settings.insert(
+        "number_of_shards".to_string(),
+        serde_json::Value::from(payload.shards),
+    );
+    settings.insert(
+        "number_of_replicas".to_string(),
+        serde_json::Value::from(payload.replicas),
+    );
 
     let mut body = serde_json::json!({
         "settings": {
@@ -983,14 +1094,20 @@ pub async fn new_mapping_create(
         "mappings": payload.mapping
     });
 
-    if let Some(alias) = payload.alias.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(alias) = payload
+        .alias
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         body["aliases"] = serde_json::json!({
             alias: {}
         });
     }
 
     let path = format!("/{}", urlencoding::encode(new_index));
-    let response: serde_json::Value = client.put(&path, body)
+    let response: serde_json::Value = client
+        .put(&path, body)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -1032,7 +1149,10 @@ async fn load_indices_data(
         "/_cat/indices?format=json&bytes=b&h=health,status,index,uuid,pri,rep,docs.count,docs.deleted,store.size,pri.store.size,creation.date.string".to_string()
     } else {
         // Pattern dej do path BEZ URL encoding - Elasticsearch sám zpracuje wildcards
-        format!("/_cat/indices/{}?format=json&bytes=b&h=health,status,index,uuid,pri,rep,docs.count,docs.deleted,store.size,pri.store.size,creation.date.string", filter)
+        format!(
+            "/_cat/indices/{}?format=json&bytes=b&h=health,status,index,uuid,pri,rep,docs.count,docs.deleted,store.size,pri.store.size,creation.date.string",
+            filter
+        )
     };
 
     tracing::debug!("Fetching indices with pattern: {}, path: {}", filter, path);
@@ -1045,12 +1165,14 @@ async fn load_indices_data(
 
     // Načti aliasy
     let aliases: Vec<AliasInfo> = if !indices.is_empty() {
-        let alias_scope = indices.iter()
+        let alias_scope = indices
+            .iter()
             .map(|idx| idx.index.as_str())
             .collect::<Vec<_>>()
             .join(",");
         let aliases_path = format!("/{}/_alias?format=json", alias_scope);
-        let aliases_response: serde_json::Value = client.get(&aliases_path).await.unwrap_or_default();
+        let aliases_response: serde_json::Value =
+            client.get(&aliases_path).await.unwrap_or_default();
         let mut aliases = Vec::new();
         if let Some(indices_map) = aliases_response.as_object() {
             for (index_name, index_data) in indices_map {
@@ -1061,7 +1183,10 @@ async fn load_indices_data(
                     aliases.push(AliasInfo {
                         alias: alias_name.clone(),
                         index: index_name.clone(),
-                        is_write_index: alias_meta.get("is_write_index").and_then(|v| v.as_bool()).map(|v| v.to_string()),
+                        is_write_index: alias_meta
+                            .get("is_write_index")
+                            .and_then(|v| v.as_bool())
+                            .map(|v| v.to_string()),
                     });
                 }
             }
@@ -1146,7 +1271,8 @@ async fn load_indices_data(
 
     // Pagination
     let start = (query.page - 1) * query.per_page;
-    let paginated_indices = indices.into_iter()
+    let paginated_indices = indices
+        .into_iter()
         .skip(start)
         .take(query.per_page)
         .collect();
@@ -1173,7 +1299,10 @@ pub async fn index_detail(
     let active_endpoint = get_active_endpoint(&state, &jar).await;
 
     if active_endpoint.is_none() {
-        return Err((StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "No active endpoint selected".to_string(),
+        ));
     }
 
     let endpoint = active_endpoint.as_ref().unwrap();
@@ -1181,8 +1310,10 @@ pub async fn index_detail(
     // Načti data s timeoutem
     let data = match tokio::time::timeout(
         tokio::time::Duration::from_secs(10),
-        load_index_detail(&state, endpoint, &index_name)
-    ).await {
+        load_index_detail(&state, endpoint, &index_name),
+    )
+    .await
+    {
         Ok(Ok(d)) => Some(d),
         Ok(Err(e)) => {
             tracing::error!("Failed to load index detail: {}", e);
@@ -1196,7 +1327,8 @@ pub async fn index_detail(
 
     let template = IndexDetailTemplate { data };
 
-    template.render()
+    template
+        .render()
         .map(Html)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
@@ -1229,40 +1361,46 @@ async fn load_index_detail(
 
     // 2. Načti aliasy - musíme použít GET /{index}/_alias místo _cat/aliases
     let aliases_path = format!("/{}/_alias", index_name);
-    let aliases_response: serde_json::Value = client.get(&aliases_path).await.unwrap_or(serde_json::json!({}));
+    let aliases_response: serde_json::Value = client
+        .get(&aliases_path)
+        .await
+        .unwrap_or(serde_json::json!({}));
 
     // Parsuj aliasy z response - struktura je: { "index_name": { "aliases": { "alias1": {}, "alias2": {} } } }
     let mut alias_names: Vec<String> = Vec::new();
-    if let Some(aliases_map) = aliases_response.get(index_name)
+    if let Some(aliases_map) = aliases_response
+        .get(index_name)
         .and_then(|index_obj| index_obj.get("aliases"))
-        .and_then(|aliases_obj| aliases_obj.as_object()) {
-            alias_names = aliases_map.keys().map(|k| k.to_string()).collect();
-        }
+        .and_then(|aliases_obj| aliases_obj.as_object())
+    {
+        alias_names = aliases_map.keys().map(|k| k.to_string()).collect();
+    }
 
     // 3. Načti settings
     let settings_path = format!("/{}/_settings", index_name);
     let settings_response: serde_json::Value = client.get(&settings_path).await?;
-    let settings = serde_json::to_string_pretty(&settings_response)
-        .ok();
+    let settings = serde_json::to_string_pretty(&settings_response).ok();
 
     // 4. Načti mappings
     let mappings_path = format!("/{}/_mapping", index_name);
     let mappings_response: serde_json::Value = client.get(&mappings_path).await?;
-    let mappings = serde_json::to_string_pretty(&mappings_response)
-        .ok();
+    let mappings = serde_json::to_string_pretty(&mappings_response).ok();
 
     // 5. Načti stats
     let stats_path = format!("/{}/_stats", index_name);
     let stats_response: serde_json::Value = client.get(&stats_path).await?;
-    let stats = serde_json::to_string_pretty(&stats_response)
-        .ok();
+    let stats = serde_json::to_string_pretty(&stats_response).ok();
 
-    let stats_index = stats_response.get("indices")
+    let stats_index = stats_response
+        .get("indices")
         .and_then(|v| v.get(index_name))
         .or_else(|| stats_response.get("_all"))
-        .or_else(|| stats_response.get("indices")
-            .and_then(|v| v.as_object())
-            .and_then(|map| map.values().next()))
+        .or_else(|| {
+            stats_response
+                .get("indices")
+                .and_then(|v| v.as_object())
+                .and_then(|map| map.values().next())
+        })
         .unwrap_or(&serde_json::Value::Null);
 
     let get_u64 = |root: &serde_json::Value, path: &[&str]| -> Option<u64> {
@@ -1280,11 +1418,14 @@ async fn load_index_detail(
     let stats_store_size_bytes = get_u64(stats_index, &["total", "store", "size_in_bytes"]);
     let stats_pri_store_size_bytes = get_u64(stats_index, &["primaries", "store", "size_in_bytes"]);
     let stats_segments_count = get_u64(stats_index, &["total", "segments", "count"]);
-    let stats_segments_memory_bytes = get_u64(stats_index, &["total", "segments", "memory_in_bytes"]);
+    let stats_segments_memory_bytes =
+        get_u64(stats_index, &["total", "segments", "memory_in_bytes"]);
     let stats_search_query_total = get_u64(stats_index, &["total", "search", "query_total"]);
-    let stats_search_query_time_ms = get_u64(stats_index, &["total", "search", "query_time_in_millis"]);
+    let stats_search_query_time_ms =
+        get_u64(stats_index, &["total", "search", "query_time_in_millis"]);
     let stats_indexing_total = get_u64(stats_index, &["total", "indexing", "index_total"]);
-    let stats_indexing_time_ms = get_u64(stats_index, &["total", "indexing", "index_time_in_millis"]);
+    let stats_indexing_time_ms =
+        get_u64(stats_index, &["total", "indexing", "index_time_in_millis"]);
     let stats_primary_store_ratio = match (stats_pri_store_size_bytes, stats_store_size_bytes) {
         (Some(primaries), Some(total)) if total > 0 => {
             Some(((primaries * 100) / total).min(100) as u8)
@@ -1357,10 +1498,27 @@ pub struct BulkOperationQuery {
 /// POST /indices/bulk/{action}/{index_name} - Provede bulk operaci na indexu
 pub async fn bulk_operation(
     State(state): State<Arc<AppState>>,
+    identity: Option<Extension<ProxyIdentity>>,
     jar: CookieJar,
     Query(query): Query<BulkOperationQuery>,
     axum::extract::Path((action, index_name)): axum::extract::Path<(String, String)>,
 ) -> Result<Json<BulkOperationResponse>, (StatusCode, Json<BulkOperationResponse>)> {
+    if action == "delete"
+        && identity
+            .as_ref()
+            .map(|Extension(identity)| identity.role < Role::Admin)
+            .unwrap_or(false)
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(BulkOperationResponse {
+                success: false,
+                message: None,
+                error: Some("delete index requires Admin role".to_string()),
+            }),
+        ));
+    }
+
     let active_endpoint = get_active_endpoint(&state, &jar).await;
 
     if active_endpoint.is_none() {
@@ -1382,23 +1540,28 @@ pub async fn bulk_operation(
         endpoint.insecure,
         endpoint.username.clone(),
         password,
-    ).map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(BulkOperationResponse {
-            success: false,
-            message: None,
-            error: Some(format!("Failed to create ES client: {}", e)),
-        }),
-    ))?;
+    )
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(BulkOperationResponse {
+                success: false,
+                message: None,
+                error: Some(format!("Failed to create ES client: {}", e)),
+            }),
+        )
+    })?;
 
-    client.detect_version().await.map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(BulkOperationResponse {
-            success: false,
-            message: None,
-            error: Some(format!("Failed to detect ES version: {}", e)),
-        }),
-    ))?;
+    client.detect_version().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(BulkOperationResponse {
+                success: false,
+                message: None,
+                error: Some(format!("Failed to detect ES version: {}", e)),
+            }),
+        )
+    })?;
 
     // Perform the action
     let result = match action.as_str() {
@@ -1407,14 +1570,16 @@ pub async fn bulk_operation(
         "open" => perform_open_index(&client, &index_name).await,
         "refresh" => perform_refresh_index(&client, &index_name).await,
         "replicas" => {
-            let replicas = query.replicas.ok_or_else(|| (
-                StatusCode::BAD_REQUEST,
-                Json(BulkOperationResponse {
-                    success: false,
-                    message: None,
-                    error: Some("Missing replicas parameter".to_string()),
-                }),
-            ))?;
+            let replicas = query.replicas.ok_or_else(|| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(BulkOperationResponse {
+                        success: false,
+                        message: None,
+                        error: Some("Missing replicas parameter".to_string()),
+                    }),
+                )
+            })?;
             perform_set_replicas(&client, &index_name, replicas).await
         }
         _ => Err(anyhow::anyhow!("Unknown action: {}", action)),
@@ -1461,7 +1626,11 @@ async fn perform_refresh_index(client: &EsClient, index_name: &str) -> anyhow::R
     Ok("Index refreshnut".to_string())
 }
 
-async fn perform_set_replicas(client: &EsClient, index_name: &str, replicas: u32) -> anyhow::Result<String> {
+async fn perform_set_replicas(
+    client: &EsClient,
+    index_name: &str,
+    replicas: u32,
+) -> anyhow::Result<String> {
     let path = format!("/{}/_settings", index_name);
     let body = serde_json::json!({
         "index": {

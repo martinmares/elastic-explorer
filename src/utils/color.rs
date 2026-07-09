@@ -31,9 +31,9 @@ pub fn get_text_color_for_background(bg_color: &str) -> String {
         // Pro žlutou a světle zelenou: nižší práh (0.35)
         // Pro ostatní: vyšší práh (0.5)
         let threshold = if (40.0..=80.0).contains(&h) || (90.0..=150.0).contains(&h) {
-            0.35  // Žlutá a světle zelená oblast
+            0.35 // Žlutá a světle zelená oblast
         } else {
-            0.5   // Ostatní barvy
+            0.5 // Ostatní barvy
         };
 
         if luminance > threshold {
@@ -50,7 +50,8 @@ pub fn get_text_color_for_background(bg_color: &str) -> String {
 /// Parsuje HSL string a vrací (hue, saturation, lightness)
 fn parse_hsl(hsl: &str) -> Option<(f32, f32, f32)> {
     // Formát: "hsl(120, 70%, 40%)"
-    let parts: Vec<&str> = hsl.trim_start_matches("hsl(")
+    let parts: Vec<&str> = hsl
+        .trim_start_matches("hsl(")
         .trim_end_matches(')')
         .split(',')
         .collect();
@@ -88,9 +89,21 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
 /// Vypočítá relativní luminanci podle WCAG 2.0
 fn calculate_relative_luminance(r: f32, g: f32, b: f32) -> f32 {
     // Linearizuj RGB hodnoty
-    let r_lin = if r <= 0.03928 { r / 12.92 } else { ((r + 0.055) / 1.055).powf(2.4) };
-    let g_lin = if g <= 0.03928 { g / 12.92 } else { ((g + 0.055) / 1.055).powf(2.4) };
-    let b_lin = if b <= 0.03928 { b / 12.92 } else { ((b + 0.055) / 1.055).powf(2.4) };
+    let r_lin = if r <= 0.03928 {
+        r / 12.92
+    } else {
+        ((r + 0.055) / 1.055).powf(2.4)
+    };
+    let g_lin = if g <= 0.03928 {
+        g / 12.92
+    } else {
+        ((g + 0.055) / 1.055).powf(2.4)
+    };
+    let b_lin = if b <= 0.03928 {
+        b / 12.92
+    } else {
+        ((b + 0.055) / 1.055).powf(2.4)
+    };
 
     // WCAG formula pro relativní luminanci
     0.2126 * r_lin + 0.7152 * g_lin + 0.0722 * b_lin
@@ -99,10 +112,10 @@ fn calculate_relative_luminance(r: f32, g: f32, b: f32) -> f32 {
 /// Vrací barvu podle stavu shardu (pro border)
 pub fn shard_state_color(state: &str) -> String {
     match state {
-        "STARTED" => "#2fb344".to_string(), // zelená
-        "RELOCATING" => "#f59f00".to_string(), // oranžová
+        "STARTED" => "#2fb344".to_string(),      // zelená
+        "RELOCATING" => "#f59f00".to_string(),   // oranžová
         "INITIALIZING" => "#206bc4".to_string(), // modrá
-        "UNASSIGNED" => "#d63939".to_string(), // červená
-        _ => "#626976".to_string(), // šedá pro neznámé stavy
+        "UNASSIGNED" => "#d63939".to_string(),   // červená
+        _ => "#626976".to_string(),              // šedá pro neznámé stavy
     }
 }

@@ -1,15 +1,17 @@
 pub mod models;
 
-use anyhow::{Context, Result};
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
-use sqlx::Row;
-use std::str::FromStr;
+use anyhow::{Context, Result};
 use base64::Engine;
+use sqlx::Row;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+use std::str::FromStr;
 
 use crate::config;
-use crate::db::models::{CreateEndpoint, Endpoint, UpdateEndpoint, SavedQuery, ConsoleHistory, CreateConsoleHistory};
+use crate::db::models::{
+    ConsoleHistory, CreateConsoleHistory, CreateEndpoint, Endpoint, SavedQuery, UpdateEndpoint,
+};
 
 pub struct Database {
     pool: SqlitePool,
@@ -24,8 +26,7 @@ impl Database {
 
         tracing::info!("Connecting to database: {}", db_url);
 
-        let options = SqliteConnectOptions::from_str(&db_url)?
-            .create_if_missing(true);
+        let options = SqliteConnectOptions::from_str(&db_url)?.create_if_missing(true);
 
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
@@ -40,7 +41,10 @@ impl Database {
             .try_into()
             .map_err(|_| anyhow::anyhow!("Invalid encryption key length"))?;
 
-        Ok(Self { pool, encryption_key })
+        Ok(Self {
+            pool,
+            encryption_key,
+        })
     }
 
     /// Spustí SQL migrace
@@ -105,7 +109,7 @@ impl Database {
 
     async fn repair_console_history_schema(pool: &SqlitePool) -> Result<()> {
         let schema_sql: Option<String> = sqlx::query_scalar(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'console_history'"
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'console_history'",
         )
         .fetch_optional(pool)
         .await
@@ -160,25 +164,21 @@ COMMIT;
 
     /// Získá všechny endpointy
     pub async fn get_endpoints(&self) -> Result<Vec<Endpoint>> {
-        let endpoints = sqlx::query_as::<_, Endpoint>(
-            "SELECT * FROM endpoints ORDER BY name"
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("Failed to fetch endpoints")?;
+        let endpoints = sqlx::query_as::<_, Endpoint>("SELECT * FROM endpoints ORDER BY name")
+            .fetch_all(&self.pool)
+            .await
+            .context("Failed to fetch endpoints")?;
 
         Ok(endpoints)
     }
 
     /// Získá endpoint podle ID
     pub async fn get_endpoint(&self, id: i64) -> Result<Option<Endpoint>> {
-        let endpoint = sqlx::query_as::<_, Endpoint>(
-            "SELECT * FROM endpoints WHERE id = ?"
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .context("Failed to fetch endpoint")?;
+        let endpoint = sqlx::query_as::<_, Endpoint>("SELECT * FROM endpoints WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .context("Failed to fetch endpoint")?;
 
         Ok(endpoint)
     }
@@ -237,7 +237,9 @@ COMMIT;
         let mut tx = self.pool.begin().await?;
         let name = endpoint.name.context("Missing endpoint name")?;
         let url = endpoint.url.context("Missing endpoint url")?;
-        let insecure = endpoint.insecure.context("Missing endpoint insecure flag")?;
+        let insecure = endpoint
+            .insecure
+            .context("Missing endpoint insecure flag")?;
 
         sqlx::query(
             "UPDATE endpoints
@@ -319,20 +321,18 @@ COMMIT;
         let plaintext = cipher
             .decrypt(nonce, ciphertext)
             .map_err(|_| anyhow::anyhow!("Failed to decrypt password"))?;
-        let password = String::from_utf8(plaintext)
-            .context("Decrypted password is not valid UTF-8")?;
+        let password =
+            String::from_utf8(plaintext).context("Decrypted password is not valid UTF-8")?;
         Ok(password)
     }
 
     /// Získá všechny uložené queries
     #[allow(dead_code)]
     pub async fn get_saved_queries(&self) -> Result<Vec<SavedQuery>> {
-        let queries = sqlx::query_as::<_, SavedQuery>(
-            "SELECT * FROM saved_queries ORDER BY name"
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("Failed to fetch saved queries")?;
+        let queries = sqlx::query_as::<_, SavedQuery>("SELECT * FROM saved_queries ORDER BY name")
+            .fetch_all(&self.pool)
+            .await
+            .context("Failed to fetch saved queries")?;
 
         Ok(queries)
     }
@@ -350,7 +350,7 @@ COMMIT;
             "SELECT id FROM console_history
              WHERE endpoint_id = ? AND method = ? AND path = ?
                AND ((body = ?) OR (body IS NULL AND ? IS NULL))
-             LIMIT 1"
+             LIMIT 1",
         )
         .bind(history.endpoint_id)
         .bind(&history.method)
@@ -366,7 +366,7 @@ COMMIT;
             sqlx::query(
                 "UPDATE console_history
                  SET response_status = ?, response_body = ?, created_at = CURRENT_TIMESTAMP
-                 WHERE id = ?"
+                 WHERE id = ?",
             )
             .bind(history.response_status)
             .bind(&history.response_body)
@@ -397,7 +397,11 @@ COMMIT;
     }
 
     /// Získá historii console dotazů (poslední N záznamů)
-    pub async fn get_console_history(&self, limit: i64, endpoint_id: Option<i64>) -> Result<Vec<ConsoleHistory>> {
+    pub async fn get_console_history(
+        &self,
+        limit: i64,
+        endpoint_id: Option<i64>,
+    ) -> Result<Vec<ConsoleHistory>> {
         let histories = if let Some(ep_id) = endpoint_id {
             sqlx::query_as::<_, ConsoleHistory>(
                 "SELECT * FROM console_history WHERE endpoint_id = ? ORDER BY created_at DESC LIMIT ?"
@@ -409,7 +413,7 @@ COMMIT;
             .context("Failed to fetch console history for endpoint")?
         } else {
             sqlx::query_as::<_, ConsoleHistory>(
-                "SELECT * FROM console_history ORDER BY created_at DESC LIMIT ?"
+                "SELECT * FROM console_history ORDER BY created_at DESC LIMIT ?",
             )
             .bind(limit)
             .fetch_all(&self.pool)
@@ -426,7 +430,7 @@ COMMIT;
             "DELETE FROM console_history
              WHERE id NOT IN (
                  SELECT id FROM console_history ORDER BY created_at DESC LIMIT ?
-             )"
+             )",
         )
         .bind(keep_last)
         .execute(&self.pool)

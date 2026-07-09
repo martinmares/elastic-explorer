@@ -1,18 +1,20 @@
+use askama::Template;
 use axum::{
     extract::{Query, State},
-    response::Html,
     http::StatusCode,
+    response::Html,
 };
 use axum_extra::extract::CookieJar;
-use std::sync::Arc;
-use std::collections::HashMap;
-use askama::Template;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use crate::handlers::endpoints::{AppState, default_index_pattern, get_active_endpoint, get_endpoint_password};
-use crate::templates::{ShardsTemplate, PageContext};
 use crate::es::EsClient;
-use crate::utils::{generate_index_color, shard_state_color, get_text_color_for_background};
+use crate::handlers::endpoints::{
+    AppState, default_index_pattern, get_active_endpoint, get_endpoint_password,
+};
+use crate::templates::{PageContext, ShardsTemplate};
+use crate::utils::{generate_index_color, get_text_color_for_background, shard_state_color};
 
 #[derive(Debug, Deserialize)]
 pub struct ShardsQuery {
@@ -191,8 +193,10 @@ pub async fn shards_page(
         Some(ref endpoint) => {
             match tokio::time::timeout(
                 tokio::time::Duration::from_secs(30),
-                load_shards_data(&state, endpoint, &pattern)
-            ).await {
+                load_shards_data(&state, endpoint, &pattern),
+            )
+            .await
+            {
                 Ok(Ok(d)) => Some(d),
                 Ok(Err(e)) => {
                     tracing::error!("Failed to load shards: {}", e);
@@ -213,7 +217,8 @@ pub async fn shards_page(
         pattern: pattern.clone(),
     };
 
-    template.render()
+    template
+        .render()
         .map(Html)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
@@ -236,11 +241,15 @@ async fn load_shards_data(
 
     // Vždy zavolej _cat/shards pro všechny indexy - filtrování uděláme v Rustu
     // Důvod: ES může vrátit chybu když pattern neodpovídá žádnému indexu
-    let path = "/_cat/shards?format=json&h=index,shard,prirep,state,docs,store,node,unassigned.reason";
+    let path =
+        "/_cat/shards?format=json&h=index,shard,prirep,state,docs,store,node,unassigned.reason";
 
     tracing::info!("Loading all shards, will filter by pattern: {}", pattern);
     let response: serde_json::Value = client.get(path).await?;
-    tracing::info!("Received shards response, array length: {}", response.as_array().map(|a| a.len()).unwrap_or(0));
+    tracing::info!(
+        "Received shards response, array length: {}",
+        response.as_array().map(|a| a.len()).unwrap_or(0)
+    );
 
     let mut shards: Vec<ShardInfo> = Vec::new();
 
@@ -275,7 +284,8 @@ async fn load_shards_data(
                 docs: item["docs"].as_str().unwrap_or("0").to_string(),
                 store: item["store"].as_str().unwrap_or("0b").to_string(),
                 node: item["node"].as_str().unwrap_or("UNASSIGNED").to_string(),
-                unassigned_reason: item.get("unassigned.reason")
+                unassigned_reason: item
+                    .get("unassigned.reason")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
             });
@@ -285,12 +295,14 @@ async fn load_shards_data(
     // Seskup podle nodů
     let mut nodes_map: HashMap<String, Vec<ShardInfo>> = HashMap::new();
     for shard in &shards {
-        nodes_map.entry(shard.node.clone())
+        nodes_map
+            .entry(shard.node.clone())
             .or_default()
             .push(shard.clone());
     }
 
-    let nodes: Vec<NodeShards> = nodes_map.into_iter()
+    let nodes: Vec<NodeShards> = nodes_map
+        .into_iter()
         .map(|(node_name, shards)| NodeShards { node_name, shards })
         .collect();
 

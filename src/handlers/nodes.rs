@@ -1,17 +1,17 @@
+use askama::Template;
 use axum::{
     extract::{Path, State},
-    response::{Html, Json},
     http::StatusCode,
+    response::{Html, Json},
 };
 use axum_extra::extract::CookieJar;
-use std::sync::Arc;
-use askama::Template;
 use serde::Serialize;
+use std::sync::Arc;
 
-use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
-use crate::templates::{NodeDetailTemplate, PageContext};
 use crate::es::EsClient;
+use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
 use crate::models::NodeDetail;
+use crate::templates::{NodeDetailTemplate, PageContext};
 
 #[derive(Debug, Serialize)]
 pub struct NodeMetrics {
@@ -31,7 +31,10 @@ pub async fn node_detail(
     let active_endpoint = get_active_endpoint(&state, &jar).await;
 
     if active_endpoint.is_none() {
-        return Err((StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "No active endpoint selected".to_string(),
+        ));
     }
 
     let endpoint = active_endpoint.as_ref().unwrap();
@@ -39,8 +42,10 @@ pub async fn node_detail(
     // Načti data o nodu s timeoutem
     let data = match tokio::time::timeout(
         tokio::time::Duration::from_secs(30),
-        load_node_detail(&state, endpoint, &node_id)
-    ).await {
+        load_node_detail(&state, endpoint, &node_id),
+    )
+    .await
+    {
         Ok(Ok(d)) => Some(d),
         Ok(Err(e)) => {
             if e.to_string().contains("Node not found") {
@@ -59,7 +64,8 @@ pub async fn node_detail(
     let ctx = PageContext::new(active_endpoint, state.base_path.clone());
     let template = NodeDetailTemplate { ctx, data, node_id };
 
-    template.render()
+    template
+        .render()
         .map(Html)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
@@ -90,27 +96,42 @@ async fn load_node_detail(
     }
 
     let name = node_data["name"].as_str().unwrap_or("unknown").to_string();
-    let roles = node_data["roles"].as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+    let roles = node_data["roles"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
         .unwrap_or_default();
 
     let ip = node_data["ip"].as_str().unwrap_or("-").to_string();
     let version = node_data["version"].as_str().unwrap_or("-").to_string();
     let os_name = node_data["os"]["name"].as_str().unwrap_or("-").to_string();
     let os_arch = node_data["os"]["arch"].as_str().unwrap_or("-").to_string();
-    let jvm_version = node_data["jvm"]["version"].as_str().unwrap_or("-").to_string();
+    let jvm_version = node_data["jvm"]["version"]
+        .as_str()
+        .unwrap_or("-")
+        .to_string();
 
     // Získej node stats
-    let stats_response: serde_json::Value = client.get(&format!("/_nodes/{}/stats", node_id)).await?;
+    let stats_response: serde_json::Value =
+        client.get(&format!("/_nodes/{}/stats", node_id)).await?;
     let stats = &stats_response["nodes"][node_id];
 
     // CPU
     let cpu_percent = stats["os"]["cpu"]["percent"].as_u64().map(|v| v as u8);
 
     // JVM Heap
-    let heap_percent = stats["jvm"]["mem"]["heap_used_percent"].as_u64().map(|v| v as u8);
-    let heap_used = stats["jvm"]["mem"]["heap_used_in_bytes"].as_u64().unwrap_or(0);
-    let heap_max = stats["jvm"]["mem"]["heap_max_in_bytes"].as_u64().unwrap_or(0);
+    let heap_percent = stats["jvm"]["mem"]["heap_used_percent"]
+        .as_u64()
+        .map(|v| v as u8);
+    let heap_used = stats["jvm"]["mem"]["heap_used_in_bytes"]
+        .as_u64()
+        .unwrap_or(0);
+    let heap_max = stats["jvm"]["mem"]["heap_max_in_bytes"]
+        .as_u64()
+        .unwrap_or(0);
 
     // RAM
     let ram_used = stats["os"]["mem"]["used_in_bytes"].as_u64().unwrap_or(0);
@@ -122,7 +143,9 @@ async fn load_node_detail(
     };
 
     // Disk
-    let disk_available = stats["fs"]["total"]["available_in_bytes"].as_u64().unwrap_or(0);
+    let disk_available = stats["fs"]["total"]["available_in_bytes"]
+        .as_u64()
+        .unwrap_or(0);
     let disk_total = stats["fs"]["total"]["total_in_bytes"].as_u64().unwrap_or(0);
     let disk_used = disk_total - disk_available;
     let disk_percent = if disk_total > 0 {
@@ -136,7 +159,9 @@ async fn load_node_detail(
     let docs_deleted = stats["indices"]["docs"]["deleted"].as_u64().unwrap_or(0);
 
     // Store
-    let store_size = stats["indices"]["store"]["size_in_bytes"].as_u64().unwrap_or(0);
+    let store_size = stats["indices"]["store"]["size_in_bytes"]
+        .as_u64()
+        .unwrap_or(0);
 
     Ok(NodeDetail {
         id: node_id.to_string(),
@@ -173,7 +198,10 @@ pub async fn node_metrics(
     let active_endpoint = get_active_endpoint(&state, &jar).await;
 
     if active_endpoint.is_none() {
-        return Err((StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "No active endpoint selected".to_string(),
+        ));
     }
 
     let endpoint = active_endpoint.as_ref().unwrap();
@@ -181,8 +209,10 @@ pub async fn node_metrics(
     // Načti pouze metriky s timeoutem
     let metrics = match tokio::time::timeout(
         tokio::time::Duration::from_secs(30),
-        load_node_metrics(&state, endpoint, &node_id)
-    ).await {
+        load_node_metrics(&state, endpoint, &node_id),
+    )
+    .await
+    {
         Ok(Ok(m)) => m,
         Ok(Err(e)) => {
             if e.to_string().contains("Node not found") {
@@ -216,7 +246,8 @@ async fn load_node_metrics(
     )?;
 
     // Získej node stats
-    let stats_response: serde_json::Value = client.get(&format!("/_nodes/{}/stats", node_id)).await?;
+    let stats_response: serde_json::Value =
+        client.get(&format!("/_nodes/{}/stats", node_id)).await?;
     let stats = &stats_response["nodes"][node_id];
 
     if stats.is_null() {
@@ -227,7 +258,9 @@ async fn load_node_metrics(
     let cpu_percent = stats["os"]["cpu"]["percent"].as_u64().map(|v| v as u8);
 
     // JVM Heap
-    let heap_percent = stats["jvm"]["mem"]["heap_used_percent"].as_u64().map(|v| v as u8);
+    let heap_percent = stats["jvm"]["mem"]["heap_used_percent"]
+        .as_u64()
+        .map(|v| v as u8);
 
     // RAM
     let ram_used = stats["os"]["mem"]["used_in_bytes"].as_u64().unwrap_or(0);
@@ -239,7 +272,9 @@ async fn load_node_metrics(
     };
 
     // Disk
-    let disk_available = stats["fs"]["total"]["available_in_bytes"].as_u64().unwrap_or(0);
+    let disk_available = stats["fs"]["total"]["available_in_bytes"]
+        .as_u64()
+        .unwrap_or(0);
     let disk_total = stats["fs"]["total"]["total_in_bytes"].as_u64().unwrap_or(0);
     let disk_used = disk_total - disk_available;
     let disk_percent = if disk_total > 0 {

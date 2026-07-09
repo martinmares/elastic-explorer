@@ -1,16 +1,18 @@
+use askama::Template;
 use axum::{
     extract::{Query, State},
+    http::{HeaderMap, StatusCode},
     response::{Html, Json},
-    http::{StatusCode, HeaderMap},
 };
 use axum_extra::extract::{CookieJar, cookie::Cookie};
-use std::sync::Arc;
-use askama::Template;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
-use crate::handlers::endpoints::{AppState, default_index_pattern, get_active_endpoint, get_endpoint_password};
-use crate::templates::{SearchTemplate, SearchResultsTemplate, PageContext};
 use crate::es::EsClient;
+use crate::handlers::endpoints::{
+    AppState, default_index_pattern, get_active_endpoint, get_endpoint_password,
+};
+use crate::templates::{PageContext, SearchResultsTemplate, SearchTemplate};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct SearchQuery {
@@ -24,8 +26,12 @@ pub struct SearchQuery {
     pub per_page: usize,
 }
 
-fn default_page() -> usize { 1 }
-fn default_per_page() -> usize { 20 }
+fn default_page() -> usize {
+    1
+}
+fn default_per_page() -> usize {
+    20
+}
 
 const MAX_RESULTS_PER_PAGE: usize = 100;
 const MAX_PAGES: usize = 500; // Elasticsearch limit: 10,000 výsledků
@@ -61,13 +67,14 @@ impl SearchHit {
         } else {
             let mut preview = json_str.chars().take(preview_len).collect::<String>();
             // Najdi poslední mezeru aby se text neseknul uprostřed slova
-            if let Some(last_space) = preview.rfind(|c: char| c.is_whitespace() || c == ',' || c == ':') {
+            if let Some(last_space) =
+                preview.rfind(|c: char| c.is_whitespace() || c == ',' || c == ':')
+            {
                 preview.truncate(last_space);
             }
             format!("{}...", preview)
         }
     }
-
 }
 
 impl SearchResultsData {
@@ -186,33 +193,35 @@ pub async fn search_page(
             format!("search_query_{}", endpoint.id),
         )
     } else {
-        ("search_index_pattern".to_string(), "search_query".to_string())
+        (
+            "search_index_pattern".to_string(),
+            "search_query".to_string(),
+        )
     };
 
-    if query.index_pattern.is_empty()
-    {
+    if query.index_pattern.is_empty() {
         if let Some(cookie_value) = jar.get(&pattern_cookie_name) {
             query.index_pattern = cookie_value.value().to_string();
         } else if let Some(ref endpoint) = active_endpoint
-            && let Some(default_pattern) = default_index_pattern(endpoint) {
-                query.index_pattern = default_pattern;
-            }
+            && let Some(default_pattern) = default_index_pattern(endpoint)
+        {
+            query.index_pattern = default_pattern;
+        }
     }
     if query.query.is_empty()
-        && let Some(cookie_value) = jar.get(&query_cookie_name) {
-            query.query = cookie_value.value().to_string();
-        }
+        && let Some(cookie_value) = jar.get(&query_cookie_name)
+    {
+        query.query = cookie_value.value().to_string();
+    }
 
     let (includes, excludes) = parse_pattern_expression(&query.index_pattern);
     let has_specific_pattern = !(includes.len() == 1 && includes[0] == "*");
 
     if !has_specific_pattern {
-        let template = SearchTemplate {
-            ctx,
-            data: None,
-        };
+        let template = SearchTemplate { ctx, data: None };
 
-        return template.render()
+        return template
+            .render()
             .map(|html| (jar, Html(html)))
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
@@ -248,7 +257,8 @@ pub async fn search_page(
             data: Some(dummy_data),
         };
 
-        return template.render()
+        return template
+            .render()
             .map(|html| (jar, Html(html)))
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
@@ -295,8 +305,10 @@ pub async fn search_page(
             } else {
                 match tokio::time::timeout(
                     tokio::time::Duration::from_secs(30),
-                    perform_search(&state, endpoint, &search_query)
-                ).await {
+                    perform_search(&state, endpoint, &search_query),
+                )
+                .await
+                {
                     Ok(Ok(d)) => Some(d),
                     Ok(Err(e)) => {
                         tracing::error!("Failed to perform search: {}", e);
@@ -315,7 +327,8 @@ pub async fn search_page(
     // Pokud je to HTMX request, vrať jen výsledky
     if is_htmx {
         let template = SearchResultsTemplate { data };
-        return template.render()
+        return template
+            .render()
             .map(|html| (jar, Html(html)))
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
@@ -323,7 +336,8 @@ pub async fn search_page(
     // Jinak vrať celou stránku
     let template = SearchTemplate { ctx, data };
 
-    template.render()
+    template
+        .render()
         .map(|html| (jar, Html(html)))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
@@ -372,7 +386,8 @@ async fn perform_search(
 
     // Parsuj výsledky
     let took = response["took"].as_u64().unwrap_or(0);
-    let total = response["hits"]["total"]["value"].as_u64()
+    let total = response["hits"]["total"]["value"]
+        .as_u64()
         .or_else(|| response["hits"]["total"].as_u64())
         .unwrap_or(0);
 
@@ -483,9 +498,12 @@ pub async fn bulk_delete_documents(
         endpoint.insecure,
         endpoint.username.clone(),
         password,
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    client.detect_version().await
+    client
+        .detect_version()
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let mut results = Vec::new();

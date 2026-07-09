@@ -42,10 +42,8 @@ pub fn load_or_create_key() -> Result<Vec<u8>> {
     let key_path = get_key_path()?;
 
     if key_path.exists() {
-        let key_hex = fs::read_to_string(&key_path)
-            .context("Failed to read encryption key")?;
-        let key_bytes = hex::decode(key_hex.trim())
-            .context("Failed to decode encryption key")?;
+        let key_hex = fs::read_to_string(&key_path).context("Failed to read encryption key")?;
+        let key_bytes = hex::decode(key_hex.trim()).context("Failed to decode encryption key")?;
         if key_bytes.len() != 32 {
             return Err(anyhow::anyhow!("Encryption key must be 32 bytes"));
         }
@@ -55,8 +53,7 @@ pub fn load_or_create_key() -> Result<Vec<u8>> {
     let key: [u8; 32] = rand::random();
     let key_hex = hex::encode(key);
 
-    let mut file = fs::File::create(&key_path)
-        .context("Failed to create encryption key file")?;
+    let mut file = fs::File::create(&key_path).context("Failed to create encryption key file")?;
     file.write_all(key_hex.as_bytes())
         .context("Failed to write encryption key")?;
 
@@ -73,13 +70,14 @@ pub fn load_or_create_key() -> Result<Vec<u8>> {
 }
 
 fn legacy_dir() -> Option<PathBuf> {
-    std::env::var("HOME").ok().map(|home| PathBuf::from(home).join(".elastic-explorer"))
+    std::env::var("HOME")
+        .ok()
+        .map(|home| PathBuf::from(home).join(".elastic-explorer"))
 }
 
 fn move_legacy_dir(src: &PathBuf, dst: &PathBuf) -> Result<()> {
     if !dst.exists() {
-        fs::create_dir_all(dst)
-            .context("Failed to create target config directory")?;
+        fs::create_dir_all(dst).context("Failed to create target config directory")?;
     }
 
     for entry in fs::read_dir(src).context("Failed to read legacy config directory")? {
@@ -113,9 +111,11 @@ pub fn init_directories() -> Result<()> {
         let app_dir = get_app_dir()?;
         if legacy_dir.exists() && legacy_dir != app_dir {
             move_legacy_dir(&legacy_dir, &app_dir)?;
-            if fs::read_dir(&legacy_dir).map(|mut i| i.next().is_none()).unwrap_or(false) {
-                fs::remove_dir(&legacy_dir)
-                    .context("Failed to remove legacy config directory")?;
+            if fs::read_dir(&legacy_dir)
+                .map(|mut i| i.next().is_none())
+                .unwrap_or(false)
+            {
+                fs::remove_dir(&legacy_dir).context("Failed to remove legacy config directory")?;
             }
         }
     }
@@ -123,8 +123,7 @@ pub fn init_directories() -> Result<()> {
     let data_dir = get_data_dir()?;
 
     if !data_dir.exists() {
-        std::fs::create_dir_all(&data_dir)
-            .context("Failed to create data directory")?;
+        std::fs::create_dir_all(&data_dir).context("Failed to create data directory")?;
         tracing::info!("Created data directory: {}", data_dir.display());
     }
 
@@ -135,13 +134,14 @@ pub fn init_directories() -> Result<()> {
     let legacy_db = legacy_data_dir.join("elastic-explorer.db");
     let target_db = data_dir.join("elastic-explorer.db");
     if legacy_db.exists() && !target_db.exists() {
-        fs::rename(&legacy_db, &target_db)
-            .context("Failed to move legacy database to app root")?;
+        fs::rename(&legacy_db, &target_db).context("Failed to move legacy database to app root")?;
     }
     if legacy_data_dir.exists() {
-        if fs::read_dir(&legacy_data_dir).map(|mut i| i.next().is_none()).unwrap_or(false) {
-            fs::remove_dir(&legacy_data_dir)
-                .context("Failed to remove legacy data directory")?;
+        if fs::read_dir(&legacy_data_dir)
+            .map(|mut i| i.next().is_none())
+            .unwrap_or(false)
+        {
+            fs::remove_dir(&legacy_data_dir).context("Failed to remove legacy data directory")?;
         }
     }
 

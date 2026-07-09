@@ -78,6 +78,41 @@ Supported `--conf-es-*` parameters (also via `.env`):
 - `--conf-es-password` / `CONF_ES_PASSWORD`
 - `--conf-es-insecure` / `CONF_ES_INSECURE`
 
+## Trusted proxy authentication
+
+When deployed behind `simple-idm-oauth2-proxy` or `simple-idm-ad-proxy`, enable
+trusted proxy mode and bind the app to loopback:
+
+```bash
+elastic-explorer \
+  --host 127.0.0.1 \
+  --base-path /elastic-explorer \
+  --stateless \
+  --trusted-proxy-auth
+```
+
+The proxy must strip incoming client-supplied `X-Auth-*` / `X-WEBAUTH-*` headers
+and set trusted identity headers after authentication. Supported role groups:
+
+- `elastic-explorer:admin`
+- `elastic-explorer:editor`
+- `elastic-explorer:viewer`
+
+Equivalent environment variables:
+
+- `TRUSTED_PROXY_AUTH=true`
+- `AUTH_GROUP_ADMIN=elastic-explorer:admin`
+- `AUTH_GROUP_EDITOR=elastic-explorer:editor`
+- `AUTH_GROUP_VIEWER=elastic-explorer:viewer`
+
+Role model:
+
+- `Viewer`: read-only pages.
+- `Editor`: aliases, refresh/open/close, replica changes and new index from
+  mapping.
+- `Admin`: endpoint changes, raw console execution, document bulk delete and
+  index delete.
+
 ## Configuration
 
 The application creates a data directory based on your operating system:

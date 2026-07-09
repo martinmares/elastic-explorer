@@ -1,5 +1,5 @@
-use askama::Template;
 use crate::db::models::Endpoint;
+use askama::Template;
 
 // Shared context pro všechny stránky
 #[derive(Clone)]

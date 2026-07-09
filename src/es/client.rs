@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -47,7 +47,12 @@ struct VersionInfo {
 }
 
 impl EsClient {
-    pub fn new(base_url: String, insecure: bool, username: Option<String>, password: Option<String>) -> Result<Self> {
+    pub fn new(
+        base_url: String,
+        insecure: bool,
+        username: Option<String>,
+        password: Option<String>,
+    ) -> Result<Self> {
         // Ořízni trailing slash
         let base_url = base_url.trim_end_matches('/').to_string();
 
@@ -71,8 +76,12 @@ impl EsClient {
         let response: RootResponse = self.get("").await?;
         let version = EsVersion::from_string(&response.version.number)?;
 
-        tracing::debug!("Detected Elasticsearch version: {}.{}.{}",
-            version.major, version.minor, version.patch);
+        tracing::debug!(
+            "Detected Elasticsearch version: {}.{}.{}",
+            version.major,
+            version.minor,
+            version.patch
+        );
 
         self.version = Some(version.clone());
         Ok(version)
@@ -91,8 +100,7 @@ impl EsClient {
             request = request.basic_auth(username, Some(password));
         }
 
-        let response = request.send().await
-            .context("Failed to send GET request")?;
+        let response = request.send().await.context("Failed to send GET request")?;
 
         self.handle_response(response).await
     }
@@ -110,7 +118,9 @@ impl EsClient {
             request = request.basic_auth(username, Some(password));
         }
 
-        let response = request.send().await
+        let response = request
+            .send()
+            .await
             .context("Failed to send POST request")?;
 
         self.handle_response(response).await
@@ -130,8 +140,7 @@ impl EsClient {
             request = request.basic_auth(username, Some(password));
         }
 
-        let response = request.send().await
-            .context("Failed to send PUT request")?;
+        let response = request.send().await.context("Failed to send PUT request")?;
 
         self.handle_response(response).await
     }
@@ -149,7 +158,9 @@ impl EsClient {
             request = request.basic_auth(username, Some(password));
         }
 
-        let response = request.send().await
+        let response = request
+            .send()
+            .await
             .context("Failed to send DELETE request")?;
 
         self.handle_response(response).await
@@ -165,8 +176,7 @@ impl EsClient {
             request = request.basic_auth(username, Some(password));
         }
 
-        let response = request.send().await
-            .context("Failed to send GET request")?;
+        let response = request.send().await.context("Failed to send GET request")?;
 
         self.handle_raw_response(response).await
     }
@@ -181,7 +191,9 @@ impl EsClient {
             request = request.basic_auth(username, Some(password));
         }
 
-        let response = request.send().await
+        let response = request
+            .send()
+            .await
             .context("Failed to send POST request")?;
 
         self.handle_raw_response(response).await
@@ -197,8 +209,7 @@ impl EsClient {
             request = request.basic_auth(username, Some(password));
         }
 
-        let response = request.send().await
-            .context("Failed to send PUT request")?;
+        let response = request.send().await.context("Failed to send PUT request")?;
 
         self.handle_raw_response(response).await
     }
@@ -213,7 +224,9 @@ impl EsClient {
             request = request.basic_auth(username, Some(password));
         }
 
-        let response = request.send().await
+        let response = request
+            .send()
+            .await
             .context("Failed to send DELETE request")?;
 
         self.handle_raw_response(response).await
@@ -226,12 +239,16 @@ impl EsClient {
         let status = response.status();
 
         if !status.is_success() {
-            let error_text = response.text().await
+            let error_text = response
+                .text()
+                .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
             return Err(anyhow!("Elasticsearch error ({}): {}", status, error_text));
         }
 
-        let body = response.json::<T>().await
+        let body = response
+            .json::<T>()
+            .await
             .context("Failed to parse response JSON")?;
 
         Ok(body)
@@ -241,7 +258,9 @@ impl EsClient {
         let status = response.status();
         let status_code = status.as_u16();
 
-        let body = response.text().await
+        let body = response
+            .text()
+            .await
             .context("Failed to read response text")?;
 
         Ok((status_code, body))

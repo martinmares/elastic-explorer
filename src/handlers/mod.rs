@@ -1,15 +1,15 @@
+pub mod console;
 pub mod dashboard;
 pub mod endpoints;
-pub mod nodes;
 pub mod indices;
+pub mod nodes;
 pub mod search;
 pub mod shards;
-pub mod console;
 
 use axum::{
     extract::State,
-    response::{IntoResponse, Redirect},
     http::StatusCode,
+    response::{IntoResponse, Redirect},
 };
 use std::sync::Arc;
 

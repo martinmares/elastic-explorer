@@ -1,16 +1,19 @@
+use askama::Template;
 use axum::{
-    extract::{Path, State},
-    response::{Html, IntoResponse, Redirect},
     Form,
+    extract::{Path, State},
     http::StatusCode,
+    response::{Html, IntoResponse, Redirect},
 };
 use axum_extra::extract::CookieJar;
 use axum_extra::extract::cookie::Cookie;
 use serde::Deserialize;
 use std::sync::Arc;
-use askama::Template;
 
-use crate::db::{Database, models::{CreateEndpoint, UpdateEndpoint}};
+use crate::db::{
+    Database,
+    models::{CreateEndpoint, UpdateEndpoint},
+};
 use crate::templates::{EndpointsTemplate, PageContext};
 
 pub struct AppState {
@@ -21,7 +24,9 @@ pub struct AppState {
 }
 
 pub fn default_index_pattern(endpoint: &crate::db::models::Endpoint) -> Option<String> {
-    endpoint.index_pattern.as_ref()
+    endpoint
+        .index_pattern
+        .as_ref()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .map(ToOwned::to_owned)
@@ -35,7 +40,10 @@ fn escape_attr(value: &str) -> String {
         .replace('>', "&gt;")
 }
 
-fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: Option<i64>) -> String {
+fn render_endpoints_list(
+    endpoints: &[crate::db::models::Endpoint],
+    active_id: Option<i64>,
+) -> String {
     if endpoints.is_empty() {
         return r#"<div class="empty">
             <div class="empty-icon"><i class="ti ti-server-off"></i></div>
@@ -160,7 +168,10 @@ fn render_endpoints_list(endpoints: &[crate::db::models::Endpoint], active_id: O
         )
     }).collect();
 
-    format!(r##"<div class="list-group list-group-flush">{}</div>"##, items.join(""))
+    format!(
+        r##"<div class="list-group list-group-flush">{}</div>"##,
+        items.join("")
+    )
 }
 
 #[derive(Deserialize)]
@@ -208,7 +219,9 @@ pub async fn list_endpoints(
         return Ok(Html(html));
     }
     let db = state.db.as_ref().unwrap();
-    let endpoints = db.get_endpoints().await
+    let endpoints = db
+        .get_endpoints()
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let active_endpoint = get_active_endpoint(&state, &jar).await;
@@ -216,7 +229,8 @@ pub async fn list_endpoints(
 
     let template = EndpointsTemplate { endpoints, ctx };
 
-    template.render()
+    template
+        .render()
         .map(Html)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
@@ -257,7 +271,9 @@ pub async fn create_endpoint(
     }
 
     // Vrátíme aktualizovaný seznam endpointů (pro HTMX swap)
-    let endpoints = db.get_endpoints().await
+    let endpoints = db
+        .get_endpoints()
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let active_id = get_active_endpoint(&state, &jar).await.map(|ep| ep.id);
@@ -294,10 +310,13 @@ pub async fn update_endpoint(
         },
     };
 
-    db.update_endpoint(id, update_endpoint).await
+    db.update_endpoint(id, update_endpoint)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let endpoints = db.get_endpoints().await
+    let endpoints = db
+        .get_endpoints()
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let active_id = get_active_endpoint(&state, &jar).await.map(|ep| ep.id);
@@ -316,11 +335,14 @@ pub async fn delete_endpoint(
         return Err((StatusCode::BAD_REQUEST, "Stateless mode".to_string()));
     }
     let db = state.db.as_ref().unwrap();
-    db.delete_endpoint(id).await
+    db.delete_endpoint(id)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Vrátíme aktualizovaný seznam
-    let endpoints = db.get_endpoints().await
+    let endpoints = db
+        .get_endpoints()
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let active_id = get_active_endpoint(&state, &jar).await.map(|ep| ep.id);
@@ -340,7 +362,9 @@ pub async fn select_endpoint(
     }
     let db = state.db.as_ref().unwrap();
     // Ověř že endpoint existuje
-    let endpoint = db.get_endpoint(id).await
+    let endpoint = db
+        .get_endpoint(id)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     if endpoint.is_none() {
@@ -372,10 +396,7 @@ pub async fn get_active_endpoint(
         return Some(endpoint.clone());
     }
     let db = state.db.as_ref()?;
-    let endpoint_id = jar.get("active_endpoint_id")?
-        .value()
-        .parse::<i64>()
-        .ok()?;
+    let endpoint_id = jar.get("active_endpoint_id")?.value().parse::<i64>().ok()?;
 
     db.get_endpoint(endpoint_id).await.ok()?
 }
@@ -403,7 +424,9 @@ pub async fn test_endpoint(
     }
     let db = state.db.as_ref().unwrap();
     // Získej endpoint
-    let endpoint = db.get_endpoint(id).await
+    let endpoint = db
+        .get_endpoint(id)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let endpoint = match endpoint {
@@ -420,22 +443,19 @@ pub async fn test_endpoint(
         endpoint.insecure,
         endpoint.username.clone(),
         password,
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Zkus se připojit a získat verzi
     match client.detect_version().await {
-        Ok(version) => {
-            Ok(axum::Json(serde_json::json!({
-                "success": true,
-                "message": "Připojení úspěšné",
-                "version": format!("{}.{}.{}", version.major, version.minor, version.patch)
-            })))
-        }
-        Err(e) => {
-            Ok(axum::Json(serde_json::json!({
-                "success": false,
-                "message": format!("Připojení selhalo: {}", e)
-            })))
-        }
+        Ok(version) => Ok(axum::Json(serde_json::json!({
+            "success": true,
+            "message": "Připojení úspěšné",
+            "version": format!("{}.{}.{}", version.major, version.minor, version.patch)
+        }))),
+        Err(e) => Ok(axum::Json(serde_json::json!({
+            "success": false,
+            "message": format!("Připojení selhalo: {}", e)
+        }))),
     }
 }

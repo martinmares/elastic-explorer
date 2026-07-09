@@ -1,3 +1,4 @@
+mod auth;
 mod config;
 mod db;
 mod es;
@@ -9,13 +10,13 @@ mod utils;
 
 use anyhow::Result;
 use axum::{
-    routing::{get, post, delete},
-    Router,
+    Router, middleware,
+    routing::{delete, get, post},
 };
+use chrono::Utc;
 use clap::Parser;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use chrono::Utc;
 
 use handlers::AppState;
 
@@ -62,6 +63,34 @@ struct Args {
     /// Allow insecure TLS
     #[arg(long, env = "CONF_ES_INSECURE", default_value_t = false)]
     conf_es_insecure: bool,
+
+    /// Trust X-Auth-* / X-WEBAUTH-* headers from an upstream authentication proxy
+    #[arg(long, env = "TRUSTED_PROXY_AUTH", default_value_t = false)]
+    trusted_proxy_auth: bool,
+
+    /// Group that grants Admin role
+    #[arg(
+        long,
+        env = "AUTH_GROUP_ADMIN",
+        default_value = "elastic-explorer:admin"
+    )]
+    auth_group_admin: String,
+
+    /// Group that grants Editor role
+    #[arg(
+        long,
+        env = "AUTH_GROUP_EDITOR",
+        default_value = "elastic-explorer:editor"
+    )]
+    auth_group_editor: String,
+
+    /// Group that grants Viewer role
+    #[arg(
+        long,
+        env = "AUTH_GROUP_VIEWER",
+        default_value = "elastic-explorer:viewer"
+    )]
+    auth_group_viewer: String,
 }
 
 #[tokio::main]
@@ -95,7 +124,10 @@ async fn main() -> Result<()> {
     // Shared state
     let base_path = normalize_base_path(&args.base_path);
     let stateless_endpoint = if args.stateless {
-        let url = args.conf_es_url.clone().ok_or_else(|| anyhow::anyhow!("--conf-es-url is required in --stateless mode"))?;
+        let url = args
+            .conf_es_url
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("--conf-es-url is required in --stateless mode"))?;
         let name = args.conf_es_name.clone().unwrap_or_else(|| url.clone());
         Some(db::models::Endpoint {
             id: 0,
@@ -116,39 +148,106 @@ async fn main() -> Result<()> {
         db,
         base_path: base_path.clone(),
         stateless_endpoint,
-        stateless_password: if args.stateless { args.conf_es_password.clone() } else { None },
+        stateless_password: if args.stateless {
+            args.conf_es_password.clone()
+        } else {
+            None
+        },
+    });
+
+    let auth_config = Arc::new(auth::AuthConfig {
+        enabled: args.trusted_proxy_auth,
+        admin_group: args.auth_group_admin.clone(),
+        editor_group: args.auth_group_editor.clone(),
+        viewer_group: args.auth_group_viewer.clone(),
     });
 
     // Vytvoř axum router
-    let router = Router::new()
+    let viewer_router = Router::new()
         .route("/", get(handlers::index))
         .route("/health", get(handlers::health))
         .route("/dashboard", get(handlers::dashboard::dashboard))
         .route("/endpoints", get(handlers::endpoints::list_endpoints))
-        .route("/endpoints", post(handlers::endpoints::create_endpoint))
-        .route("/endpoints/{id}", axum::routing::put(handlers::endpoints::update_endpoint))
-        .route("/endpoints/{id}", delete(handlers::endpoints::delete_endpoint))
-        .route("/endpoints/{id}/select", post(handlers::endpoints::select_endpoint))
-        .route("/endpoints/{id}/test", post(handlers::endpoints::test_endpoint))
         .route("/nodes/{id}", get(handlers::nodes::node_detail))
         .route("/nodes/{id}/metrics", get(handlers::nodes::node_metrics))
         .route("/indices", get(handlers::indices::list_indices))
         .route("/indices/table", get(handlers::indices::indices_table))
         .route("/indices/summary", get(handlers::indices::indices_summary))
         .route("/indices/metrics", get(handlers::indices::indices_metrics))
-        .route("/indices/detail/{index_name}", get(handlers::indices::index_detail))
-        .route("/indices/{index_name}/new-mapping", get(handlers::indices::new_mapping_prepare))
-        .route("/indices/{index_name}/new-mapping", post(handlers::indices::new_mapping_create))
-        .route("/indices/{index_name}/aliases", get(handlers::indices::index_aliases))
-        .route("/indices/{index_name}/aliases", post(handlers::indices::index_alias_action))
-        .route("/indices/bulk/{action}/{index_name}", post(handlers::indices::bulk_operation))
+        .route(
+            "/indices/detail/{index_name}",
+            get(handlers::indices::index_detail),
+        )
+        .route(
+            "/indices/{index_name}/new-mapping",
+            get(handlers::indices::new_mapping_prepare),
+        )
+        .route(
+            "/indices/{index_name}/aliases",
+            get(handlers::indices::index_aliases),
+        )
         .route("/search", get(handlers::search::search_page))
-        .route("/search/bulk/delete", post(handlers::search::bulk_delete_documents))
         .route("/shards", get(handlers::shards::shards_page))
         .route("/console", get(handlers::console::console_page))
-        .route("/console/execute", post(handlers::console::execute_request))
-        .route("/console/history-table", get(handlers::console::console_history_table))
+        .route(
+            "/console/history-table",
+            get(handlers::console::console_history_table),
+        )
         .route("/static/{*path}", get(static_assets::serve))
+        .layer(middleware::from_fn_with_state(
+            auth_config.clone(),
+            auth::require_viewer,
+        ));
+
+    let editor_router = Router::new()
+        .route(
+            "/indices/{index_name}/new-mapping",
+            post(handlers::indices::new_mapping_create),
+        )
+        .route(
+            "/indices/{index_name}/aliases",
+            post(handlers::indices::index_alias_action),
+        )
+        .route(
+            "/indices/bulk/{action}/{index_name}",
+            post(handlers::indices::bulk_operation),
+        )
+        .layer(middleware::from_fn_with_state(
+            auth_config.clone(),
+            auth::require_editor,
+        ));
+
+    let admin_router = Router::new()
+        .route("/endpoints", post(handlers::endpoints::create_endpoint))
+        .route(
+            "/endpoints/{id}",
+            axum::routing::put(handlers::endpoints::update_endpoint),
+        )
+        .route(
+            "/endpoints/{id}",
+            delete(handlers::endpoints::delete_endpoint),
+        )
+        .route(
+            "/endpoints/{id}/select",
+            post(handlers::endpoints::select_endpoint),
+        )
+        .route(
+            "/endpoints/{id}/test",
+            post(handlers::endpoints::test_endpoint),
+        )
+        .route(
+            "/search/bulk/delete",
+            post(handlers::search::bulk_delete_documents),
+        )
+        .route("/console/execute", post(handlers::console::execute_request))
+        .layer(middleware::from_fn_with_state(
+            auth_config.clone(),
+            auth::require_admin,
+        ));
+
+    let router = viewer_router
+        .merge(editor_router)
+        .merge(admin_router)
         .with_state(state);
     let app = if base_path == "/" {
         router

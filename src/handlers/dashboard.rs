@@ -1,16 +1,12 @@
-use axum::{
-    extract::State,
-    response::Html,
-    http::StatusCode,
-};
+use askama::Template;
+use axum::{extract::State, http::StatusCode, response::Html};
 use axum_extra::extract::CookieJar;
 use std::sync::Arc;
-use askama::Template;
 
-use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
-use crate::templates::{DashboardTemplate, PageContext};
 use crate::es::EsClient;
+use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
 use crate::models::{DashboardData, NodeSummary};
+use crate::templates::{DashboardTemplate, PageContext};
 
 /// GET /dashboard - Zobrazí dashboard
 pub async fn dashboard(
@@ -25,15 +21,20 @@ pub async fn dashboard(
     let data = if let Some(ref endpoint) = active_endpoint {
         match tokio::time::timeout(
             tokio::time::Duration::from_secs(30),
-            load_dashboard_data(&state, endpoint)
-        ).await {
+            load_dashboard_data(&state, endpoint),
+        )
+        .await
+        {
             Ok(Ok(d)) => Some(d),
             Ok(Err(e)) => {
                 tracing::error!("Failed to load dashboard data: {}", e);
                 None
             }
             Err(_) => {
-                tracing::error!("Timeout loading dashboard data for endpoint: {}", endpoint.name);
+                tracing::error!(
+                    "Timeout loading dashboard data for endpoint: {}",
+                    endpoint.name
+                );
                 None
             }
         }
@@ -42,9 +43,14 @@ pub async fn dashboard(
     };
 
     let ctx = PageContext::new(active_endpoint, state.base_path.clone());
-    let template = DashboardTemplate { endpoint_name, ctx, data };
+    let template = DashboardTemplate {
+        endpoint_name,
+        ctx,
+        data,
+    };
 
-    template.render()
+    template
+        .render()
         .map(Html)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
@@ -71,13 +77,15 @@ async fn load_dashboard_data(
     // Získej cat indices pro počet indexů a dokumentů
     let indices: Vec<crate::es::api::IndexInfo> = client.get_indices().await?;
     let indices_count = indices.len() as u32;
-    let documents_count: u64 = indices.iter()
+    let documents_count: u64 = indices
+        .iter()
         .filter_map(|i| i.docs_count.as_ref()?.parse::<u64>().ok())
         .sum();
 
     // Získej nodes info a stats
     let nodes_response: serde_json::Value = client.get_nodes().await?;
-    let nodes_map = nodes_response["nodes"].as_object()
+    let nodes_map = nodes_response["nodes"]
+        .as_object()
         .ok_or_else(|| anyhow::anyhow!("Invalid nodes response"))?;
 
     // Získej node stats pro metriky
@@ -85,32 +93,41 @@ async fn load_dashboard_data(
     let stats_map = stats_response["nodes"].as_object();
 
     // Získej master node ID
-    let master_node_id: Option<String> = match client.get::<serde_json::Value>("/_cat/master?format=json").await {
-        Ok(master_response) => {
-            master_response.as_array()
-                .and_then(|arr| arr.first())
-                .and_then(|obj| obj["id"].as_str())
-                .map(|s| s.to_string())
-        }
+    let master_node_id: Option<String> = match client
+        .get::<serde_json::Value>("/_cat/master?format=json")
+        .await
+    {
+        Ok(master_response) => master_response
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|obj| obj["id"].as_str())
+            .map(|s| s.to_string()),
         Err(_) => None, // Fallback pokud API selže
     };
 
     let mut nodes = Vec::new();
     for (node_id, node_data) in nodes_map {
         let name = node_data["name"].as_str().unwrap_or("unknown").to_string();
-        let roles = node_data["roles"].as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        let roles = node_data["roles"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_else(Vec::new);
 
         // Získej stats pro tento node
         let (cpu, heap, ram, disk) = if let Some(stats) = stats_map.and_then(|m| m.get(node_id)) {
             let cpu = stats["os"]["cpu"]["percent"].as_u64().map(|v| v as u8);
-            let heap = stats["jvm"]["mem"]["heap_used_percent"].as_u64().map(|v| v as u8);
+            let heap = stats["jvm"]["mem"]["heap_used_percent"]
+                .as_u64()
+                .map(|v| v as u8);
 
             // RAM percent
             let ram = if let (Some(used), Some(total)) = (
                 stats["os"]["mem"]["used_in_bytes"].as_u64(),
-                stats["os"]["mem"]["total_in_bytes"].as_u64()
+                stats["os"]["mem"]["total_in_bytes"].as_u64(),
             ) {
                 if total > 0 {
                     Some(((used * 100) / total) as u8)
@@ -124,7 +141,7 @@ async fn load_dashboard_data(
             // Disk percent
             let disk = if let (Some(avail), Some(total)) = (
                 stats["fs"]["total"]["available_in_bytes"].as_u64(),
-                stats["fs"]["total"]["total_in_bytes"].as_u64()
+                stats["fs"]["total"]["total_in_bytes"].as_u64(),
             ) {
                 if total > 0 {
                     let used = total - avail;
@@ -142,7 +159,10 @@ async fn load_dashboard_data(
         };
 
         // Kontrola zda je tento node master
-        let is_master = master_node_id.as_ref().map(|mid| mid == node_id).unwrap_or(false);
+        let is_master = master_node_id
+            .as_ref()
+            .map(|mid| mid == node_id)
+            .unwrap_or(false);
 
         nodes.push(NodeSummary {
             id: node_id.clone(),

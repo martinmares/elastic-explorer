@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::utils::format_number;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DashboardData {

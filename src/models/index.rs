@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::utils::{format_bytes, format_number, parse_size_to_bytes};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IndexAlias {
@@ -9,24 +9,24 @@ pub struct IndexAlias {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IndexInfo {
-    pub health: String,        // green, yellow, red
-    pub status: String,        // open, close
-    pub index: String,         // název indexu
+    pub health: String, // green, yellow, red
+    pub status: String, // open, close
+    pub index: String,  // název indexu
     pub uuid: String,
-    pub pri: String,           // primary shards
-    pub rep: String,           // replicas
+    pub pri: String, // primary shards
+    pub rep: String, // replicas
     #[serde(rename = "docs.count")]
-    pub docs_count: String,    // počet dokumentů
+    pub docs_count: String, // počet dokumentů
     #[serde(rename = "docs.deleted")]
-    pub docs_deleted: String,  // smazané dokumenty
+    pub docs_deleted: String, // smazané dokumenty
     #[serde(rename = "store.size")]
-    pub store_size: String,    // celková velikost
+    pub store_size: String, // celková velikost
     #[serde(rename = "pri.store.size")]
     pub pri_store_size: String, // velikost primary shards
     #[serde(rename = "creation.date.string")]
     pub creation_date: Option<String>,
     #[serde(skip)]
-    pub aliases: Vec<IndexAlias>,  // seznam aliasů
+    pub aliases: Vec<IndexAlias>, // seznam aliasů
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,7 +57,6 @@ impl IndexInfo {
     pub fn store_size_formatted(&self) -> String {
         format_bytes(self.store_size_bytes())
     }
-
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -83,7 +82,11 @@ impl IndicesListData {
     }
 
     pub fn next_page(&self) -> usize {
-        if self.page + 1 > self.total_pages { self.total_pages } else { self.page + 1 }
+        if self.page + 1 > self.total_pages {
+            self.total_pages
+        } else {
+            self.page + 1
+        }
     }
 
     pub fn window_start(&self) -> usize {
@@ -132,9 +135,9 @@ pub struct IndexDetail {
     pub store_size: String,
     pub pri_store_size: String,
     pub aliases: Vec<String>,
-    pub settings: Option<String>,  // JSON formatted
-    pub mappings: Option<String>,  // JSON formatted
-    pub stats: Option<String>,     // JSON formatted
+    pub settings: Option<String>, // JSON formatted
+    pub mappings: Option<String>, // JSON formatted
+    pub stats: Option<String>,    // JSON formatted
     pub stats_docs_count: Option<u64>,
     pub stats_docs_deleted: Option<u64>,
     pub stats_store_size_bytes: Option<u64>,
@@ -202,10 +205,16 @@ impl IndexDetail {
     }
 
     pub fn stats_search_time_formatted(&self) -> String {
-        format!("{} ms", format_number(self.stats_search_query_time_ms.unwrap_or(0)))
+        format!(
+            "{} ms",
+            format_number(self.stats_search_query_time_ms.unwrap_or(0))
+        )
     }
 
     pub fn stats_indexing_time_formatted(&self) -> String {
-        format!("{} ms", format_number(self.stats_indexing_time_ms.unwrap_or(0)))
+        format!(
+            "{} ms",
+            format_number(self.stats_indexing_time_ms.unwrap_or(0))
+        )
     }
 }

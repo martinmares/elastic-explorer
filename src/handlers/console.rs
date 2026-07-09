@@ -1,18 +1,18 @@
+use askama::Template;
 use axum::{
-    extract::{Query, State},
-    response::{Html, Json},
-    http::StatusCode,
     Form,
+    extract::{Query, State},
+    http::StatusCode,
+    response::{Html, Json},
 };
 use axum_extra::extract::CookieJar;
-use std::sync::Arc;
-use askama::Template;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
+use crate::db::models::CreateConsoleHistory;
+use crate::es::EsClient;
 use crate::handlers::endpoints::{AppState, get_active_endpoint, get_endpoint_password};
 use crate::templates::{ConsoleTemplate, PageContext};
-use crate::es::EsClient;
-use crate::db::models::CreateConsoleHistory;
 
 #[derive(Debug, Deserialize)]
 pub struct ConsoleQuery {
@@ -71,12 +71,14 @@ impl ConsoleHistoryWithEndpoint {
     pub fn body_escaped(&self) -> String {
         // Escape pro použití v JavaScript stringu v onclick atributu
         // Musíme escapovat: ' " \ a newlines
-        self.body.as_deref().unwrap_or("")
-            .replace('\\', "\\\\")  // Backslash first!
-            .replace('\'', "\\'")   // Single quote
-            .replace('"', "\\\"")   // Double quote
-            .replace('\n', "\\n")   // Newline
-            .replace('\r', "\\r")   // Carriage return
+        self.body
+            .as_deref()
+            .unwrap_or("")
+            .replace('\\', "\\\\") // Backslash first!
+            .replace('\'', "\\'") // Single quote
+            .replace('"', "\\\"") // Double quote
+            .replace('\n', "\\n") // Newline
+            .replace('\r', "\\r") // Carriage return
     }
 }
 
@@ -92,9 +94,13 @@ pub async fn console_page(
 
     // Načti historii (poslední 50 záznamů)
     let (history_records, endpoints) = if let Some(db) = &state.db {
-        let history = db.get_console_history(50, query.endpoint_filter).await
+        let history = db
+            .get_console_history(50, query.endpoint_filter)
+            .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let endpoints = db.get_endpoints().await
+        let endpoints = db
+            .get_endpoints()
+            .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         (history, endpoints)
     } else {
@@ -134,7 +140,8 @@ pub async fn console_page(
         data: Some(data),
     };
 
-    template.render()
+    template
+        .render()
         .map(Html)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
@@ -146,9 +153,13 @@ pub async fn console_history_table(
 ) -> Result<Html<String>, (StatusCode, String)> {
     // Načti historii (poslední 50 záznamů)
     let (history_records, endpoints) = if let Some(db) = &state.db {
-        let history = db.get_console_history(50, query.endpoint_filter).await
+        let history = db
+            .get_console_history(50, query.endpoint_filter)
+            .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let endpoints = db.get_endpoints().await
+        let endpoints = db
+            .get_endpoints()
+            .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         (history, endpoints)
     } else {
@@ -191,7 +202,10 @@ pub async fn console_history_table(
             } else {
                 ("danger", "text-white")
             };
-            format!(r#"<span class="badge bg-{} {}">{}</span>"#, color, text_color, status)
+            format!(
+                r#"<span class="badge bg-{} {}">{}</span>"#,
+                color, text_color, status
+            )
         } else {
             r#"<span class="text-muted">-</span>"#.to_string()
         };
@@ -226,8 +240,10 @@ pub async fn execute_request(
     jar: CookieJar,
     Form(req): Form<ExecuteRequest>,
 ) -> Result<Json<ExecuteResponse>, (StatusCode, String)> {
-    let active_endpoint = get_active_endpoint(&state, &jar).await
-        .ok_or((StatusCode::BAD_REQUEST, "No active endpoint selected".to_string()))?;
+    let active_endpoint = get_active_endpoint(&state, &jar).await.ok_or((
+        StatusCode::BAD_REQUEST,
+        "No active endpoint selected".to_string(),
+    ))?;
 
     // Získej heslo
     let password = get_endpoint_password(&state, &active_endpoint).await;
@@ -237,10 +253,15 @@ pub async fn execute_request(
         active_endpoint.insecure,
         active_endpoint.username.clone(),
         password,
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    client.detect_version().await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to connect: {}", e)))?;
+    client.detect_version().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to connect: {}", e),
+        )
+    })?;
 
     // Vykonej request podle metody - používáme raw metody pro podporu plain text i JSON
     let (status_code, response_body) = match req.method.to_uppercase().as_str() {
@@ -259,8 +280,8 @@ pub async fn execute_request(
             }
         }
         "POST" => {
-            let body_json: serde_json::Value = serde_json::from_str(&req.body)
-                .unwrap_or(serde_json::json!({}));
+            let body_json: serde_json::Value =
+                serde_json::from_str(&req.body).unwrap_or(serde_json::json!({}));
             match client.post_raw(&req.path, body_json).await {
                 Ok((status, body)) => {
                     // Zkus parsovat jako JSON a formatovat
@@ -275,8 +296,8 @@ pub async fn execute_request(
             }
         }
         "PUT" => {
-            let body_json: serde_json::Value = serde_json::from_str(&req.body)
-                .unwrap_or(serde_json::json!({}));
+            let body_json: serde_json::Value =
+                serde_json::from_str(&req.body).unwrap_or(serde_json::json!({}));
             match client.put_raw(&req.path, body_json).await {
                 Ok((status, body)) => {
                     // Zkus parsovat jako JSON a formatovat
@@ -305,7 +326,10 @@ pub async fn execute_request(
             }
         }
         _ => {
-            return Err((StatusCode::BAD_REQUEST, format!("Unsupported method: {}", req.method)));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("Unsupported method: {}", req.method),
+            ));
         }
     };
 
@@ -317,7 +341,11 @@ pub async fn execute_request(
         endpoint_id: active_endpoint.id,
         method: req.method.clone(),
         path: req.path.clone(),
-        body: if req.body.is_empty() { None } else { Some(req.body.clone()) },
+        body: if req.body.is_empty() {
+            None
+        } else {
+            Some(req.body.clone())
+        },
         response_status: Some(status_code as i32),
         response_body: Some(response_body.clone()),
     };

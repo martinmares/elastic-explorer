@@ -1,7 +1,7 @@
 pub mod browser;
-pub mod format;
 pub mod color;
+pub mod format;
 
 pub use browser::open_browser;
-pub use format::{format_number, format_bytes, parse_size_to_bytes};
-pub use color::{generate_index_color, shard_state_color, get_text_color_for_background};
+pub use color::{generate_index_color, get_text_color_for_background, shard_state_color};
+pub use format::{format_bytes, format_number, parse_size_to_bytes};
