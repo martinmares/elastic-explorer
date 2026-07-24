@@ -286,7 +286,7 @@
 {% block extra_scripts %}
 {% if data.is_some() %}
 {% let d = data.as_ref().unwrap() %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{% if ctx.base_path == "/" %}/static/vendor/chart/js/chart.umd.min.js{% else %}{{ ctx.base_path }}/static/vendor/chart/js/chart.umd.min.js{% endif %}"></script>
 <style>
     .chart {
         width: 100%;

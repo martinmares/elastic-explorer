@@ -89,13 +89,13 @@
                                 <!-- Buttons -->
                                 <div class="btn-list">
                                     <button
-                                        class="btn btn-sm btn-icon btn-success"
+                                        class="btn btn-icon btn-success"
                                         onclick="event.stopPropagation(); testConnection(event, {{ endpoint.id }}, '{{ endpoint.name }}')"
                                         title="Test connection">
                                         <i class="ti ti-plug-connected"></i>
                                     </button>
                                     <button
-                                        class="btn btn-sm btn-icon btn-ghost-primary"
+                                        class="btn btn-icon btn-ghost-primary"
                                         onclick="event.stopPropagation(); openEditEndpoint(this);"
                                         data-endpoint-id="{{ endpoint.id }}"
                                         data-endpoint-name="{{ endpoint.name }}"
@@ -107,13 +107,13 @@
                                         <i class="ti ti-pencil"></i>
                                     </button>
                                     <button
-                                        class="btn btn-sm btn-icon btn-ghost-secondary"
+                                        class="btn btn-icon btn-ghost-secondary"
                                         onclick="event.stopPropagation(); document.getElementById('select-form-{{ endpoint.id }}').submit();"
                                         title="Use this endpoint">
                                         <i class="ti ti-check"></i>
                                     </button>
                                     <button
-                                        class="btn btn-sm btn-icon btn-ghost-danger"
+                                        class="btn btn-icon btn-ghost-danger"
                                         onclick="event.stopPropagation(); confirmDelete({{ endpoint.id }}, '{{ endpoint.name }}');"
                                         title="Delete">
                                         <i class="ti ti-trash"></i>
@@ -247,14 +247,14 @@
         title.textContent = 'Edit Elasticsearch Endpoint';
         submitBtn.innerHTML = '<i class="ti ti-check"></i> Update Endpoint';
 
-        const modal = new bootstrap.Modal(document.getElementById('modal-endpoint'));
+        const modal = new tabler.bootstrap.Modal(document.getElementById('modal-endpoint'));
         modal.show();
     }
 
     function confirmDelete(id, name) {
         deleteEndpointId = id;
         document.getElementById('delete-endpoint-name').textContent = name;
-        const modal = new bootstrap.Modal(document.getElementById('modal-delete'));
+        const modal = new tabler.bootstrap.Modal(document.getElementById('modal-delete'));
         modal.show();
     }
 
@@ -264,7 +264,7 @@
                 target: '#endpoints-list',
                 swap: 'innerHTML'
             });
-            bootstrap.Modal.getInstance(document.getElementById('modal-delete')).hide();
+            tabler.bootstrap.Modal.getInstance(document.getElementById('modal-delete')).hide();
         }
     });
 
@@ -272,7 +272,7 @@
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         if (evt.detail.target.id === 'endpoints-list') {
             const modalElement = document.getElementById('modal-endpoint');
-            const modal = bootstrap.Modal.getInstance(modalElement);
+            const modal = tabler.bootstrap.Modal.getInstance(modalElement);
             if (modal) {
                 modal.hide();
             }

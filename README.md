@@ -22,8 +22,11 @@ A modern Elasticsearch cluster explorer written in Rust - a simpler and more int
 ### Build
 
 ```bash
-cargo build --release
+just build-macos
 ```
+
+See [Build and embedded UI assets](#build-and-embedded-ui-assets) for all
+supported targets.
 
 ### Run
 
@@ -161,13 +164,22 @@ If the key is lost, stored passwords cannot be recovered.
 cargo test
 ```
 
-### Building for Production
+### Build and embedded UI assets
+
+The UI never loads JavaScript, CSS or fonts from a CDN at runtime. Versioned
+vendor files live under `static/vendor/` and are embedded into the binary.
 
 ```bash
-cargo build --release
+just assets-check
+just build-linux    # x86_64 Linux MUSL via cargo-zigbuild
+just build-macos    # Apple Silicon macOS
+just build-windows  # x86_64 Windows GNU
+just build-all
 ```
 
-The binary will be available at `target/release/elastic-explorer`
+Run `just assets-update` only when intentionally updating UI dependencies,
+then review and commit the downloaded files. Normal builds are offline with
+respect to UI assets. The Linux build requires Zig and `cargo-zigbuild`.
 
 ## License
 

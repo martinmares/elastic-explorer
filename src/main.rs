@@ -203,6 +203,7 @@ async fn main() -> Result<()> {
             "/console/history-table",
             get(handlers::console::console_history_table),
         )
+        .route("/auth/session", get(auth::session))
         .route("/static/{*path}", get(static_assets::serve))
         .layer(middleware::from_fn_with_state(
             auth_config.clone(),

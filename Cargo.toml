@@ -1,6 +1,6 @@
 [package]
 name = "elastic-explorer"
-version = "0.6.11"
+version = "0.7.0"
 edition = "2024"
 
 [dependencies]

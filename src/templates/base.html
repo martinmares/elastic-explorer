@@ -1,20 +1,26 @@
 <!DOCTYPE html>
-<html lang="cs">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Elastic Explorer{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="{% if ctx.base_path == "/" %}/static/favicon.svg{% else %}{{ ctx.base_path }}/static/favicon.svg{% endif %}">
 
-    <!-- Bootstrap CSS (needed for Tabler) -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
-
     <!-- Tabler CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css" rel="stylesheet"/>
-    <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.0.0/dist/tabler-icons.min.css" rel="stylesheet"/>
+    <link href="{% if ctx.base_path == "/" %}/static/vendor/tabler/css/tabler.min.css{% else %}{{ ctx.base_path }}/static/vendor/tabler/css/tabler.min.css{% endif %}" rel="stylesheet"/>
+    <link href="{% if ctx.base_path == "/" %}/static/vendor/tabler-icons/css/tabler-icons.min.css{% else %}{{ ctx.base_path }}/static/vendor/tabler-icons/css/tabler-icons.min.css{% endif %}" rel="stylesheet"/>
+    <script>
+        (() => {
+            const theme = localStorage.getItem("simple-ui-theme") || "auto";
+            const effective = theme === "auto"
+                ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+                : theme;
+            document.documentElement.setAttribute("data-bs-theme", effective);
+        })();
+    </script>
 
     <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="{% if ctx.base_path == "/" %}/static/vendor/htmx/js/htmx.min.js{% else %}{{ ctx.base_path }}/static/vendor/htmx/js/htmx.min.js{% endif %}"></script>
 
     {% block extra_head %}{% endblock %}
 
@@ -66,7 +72,50 @@
                     </div>
                     {% endif %}
                 </h1>
-                <div class="navbar-nav flex-row order-md-last">
+                <div class="navbar-nav flex-row order-md-last align-items-center">
+                    <div class="nav-item dropdown" id="account-item" style="display: none; position: relative;">
+                        <a href="#" class="nav-link d-flex lh-1 text-reset" id="account-toggle" aria-label="Account details">
+                            <span class="avatar avatar-sm" id="account-avatar">?</span>
+                            <span class="d-none d-xl-block ps-2">
+                                <span id="account-username">-</span>
+                                <span class="d-block text-secondary mt-1" id="account-role">-</span>
+                            </span>
+                        </a>
+                        <div id="account-menu" class="dropdown-menu dropdown-menu-end dropdown-menu-arrow" style="display: none; min-width: 22rem; max-width: 32rem; max-height: calc(100vh - 5rem); overflow-y: auto; position: absolute; right: 0; top: 100%;">
+                            <div class="dropdown-header">Account details</div>
+                            <div class="dropdown-item-text">
+                                <strong id="account-detail-username">-</strong>
+                                <div class="text-secondary small" id="account-email"></div>
+                            </div>
+                            <div class="dropdown-divider"></div>
+                            <div class="dropdown-item-text"><span class="text-secondary">Auth mode:</span> <span id="account-auth-mode">-</span></div>
+                            <div class="dropdown-item-text"><span class="text-secondary">Role:</span> <span id="account-detail-role">-</span></div>
+                            <div class="dropdown-item-text" id="account-subject-row" style="display: none;"><span class="text-secondary">Subject:</span><div class="small font-monospace text-break" id="account-subject"></div></div>
+                            <div class="dropdown-item-text" id="account-groups-row" style="display: none;"><span class="text-secondary">Groups:</span><div class="small text-wrap" id="account-groups"></div></div>
+                            <div id="account-headers-section" style="display: none;">
+                                <div class="dropdown-divider"></div>
+                                <div class="dropdown-header">Trusted proxy headers</div>
+                                <div id="account-headers"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Theme toggle -->
+                    <div class="nav-item d-none d-md-flex" style="position: relative;">
+                        <a href="#" class="nav-link px-0" id="theme-toggle" tabindex="-1" aria-label="Change theme">
+                            <i class="ti ti-sun"></i>
+                        </a>
+                        <div id="theme-menu" class="dropdown-menu dropdown-menu-end dropdown-menu-arrow" style="display: none; position: absolute; right: 0; top: 100%;">
+                            <a href="#" class="dropdown-item" data-theme="light">
+                                <i class="ti ti-sun me-2"></i> Light
+                            </a>
+                            <a href="#" class="dropdown-item" data-theme="dark">
+                                <i class="ti ti-moon me-2"></i> Dark
+                            </a>
+                            <a href="#" class="dropdown-item" data-theme="auto">
+                                <i class="ti ti-device-desktop me-2"></i> Auto
+                            </a>
+                        </div>
+                    </div>
                     {% if ctx.logout_url.is_some() %}
                     <div class="nav-item d-none d-md-flex">
                         <a href="{{ ctx.logout_url.as_ref().unwrap() }}" class="nav-link px-2" title="Sign out" hx-boost="false">
@@ -75,23 +124,6 @@
                         </a>
                     </div>
                     {% endif %}
-                    <!-- Theme toggle -->
-                    <div class="nav-item d-none d-md-flex" style="position: relative;">
-                        <a href="#" class="nav-link px-0" id="theme-toggle" tabindex="-1" aria-label="Přepnout theme">
-                            <i class="ti ti-sun"></i>
-                        </a>
-                        <div id="theme-menu" class="dropdown-menu dropdown-menu-end dropdown-menu-arrow" style="display: none; position: absolute; right: 0; top: 100%;">
-                            <a href="#" class="dropdown-item" data-theme="light">
-                                <i class="ti ti-sun me-2"></i> Světlý
-                            </a>
-                            <a href="#" class="dropdown-item" data-theme="dark">
-                                <i class="ti ti-moon me-2"></i> Tmavý
-                            </a>
-                            <a href="#" class="dropdown-item" data-theme="auto">
-                                <i class="ti ti-device-desktop me-2"></i> Auto
-                            </a>
-                        </div>
-                    </div>
                 </div>
             </div>
         </header>
@@ -217,7 +249,6 @@
     </div>
 
     <!-- Bootstrap JS (needed for modals) -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         (function () {
             const basePath = "{{ ctx.base_path }}";
@@ -282,7 +313,11 @@
     </script>
 
     <!-- Tabler JS -->
-    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js"></script>
+    <script src="{% if ctx.base_path == "/" %}/static/vendor/tabler/js/tabler.min.js{% else %}{{ ctx.base_path }}/static/vendor/tabler/js/tabler.min.js{% endif %}"></script>
+    <script>
+        window.__AUTH_SESSION_URL__ = '{% if ctx.base_path == "/" %}/auth/session{% else %}{{ ctx.base_path }}/auth/session{% endif %}';
+    </script>
+    <script src="{% if ctx.base_path == "/" %}/static/auth_ui.js{% else %}{{ ctx.base_path }}/static/auth_ui.js{% endif %}"></script>
 
     <!-- Theme initialization -->
     <script>
@@ -313,7 +348,7 @@
                     const theme = this.getAttribute('data-theme');
                     console.log('Theme selected:', theme);
 
-                    localStorage.setItem('theme', theme);
+                    localStorage.setItem('simple-ui-theme', theme);
                     applyTheme(theme);
 
                     // Close menu
@@ -323,12 +358,12 @@
 
             // Initialize all Bootstrap dropdowns (for other dropdowns like endpoints)
             const dropdownElementList = document.querySelectorAll('[data-bs-toggle="dropdown"]');
-            if (typeof bootstrap !== 'undefined' && dropdownElementList.length > 0) {
-                const dropdownList = [...dropdownElementList].map(dropdownToggleEl => new bootstrap.Dropdown(dropdownToggleEl));
+            if (typeof tabler !== 'undefined' && dropdownElementList.length > 0) {
+                const dropdownList = [...dropdownElementList].map(dropdownToggleEl => new tabler.bootstrap.Dropdown(dropdownToggleEl));
             }
 
             // Load saved theme
-            const savedTheme = localStorage.getItem('theme') || 'auto';
+            const savedTheme = localStorage.getItem('simple-ui-theme') || 'auto';
 
             function applyTheme(theme) {
                 if (theme === 'auto') {
@@ -342,11 +377,11 @@
             applyTheme(savedTheme);
 
             // Listen for OS theme changes when in auto mode
-            if (savedTheme === 'auto') {
-                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-                    document.documentElement.setAttribute('data-bs-theme', e.matches ? 'dark' : 'light');
-                });
-            }
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+                if ((localStorage.getItem('simple-ui-theme') || 'auto') === 'auto') {
+                    applyTheme('auto');
+                }
+            });
         });
     </script>
 

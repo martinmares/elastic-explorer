@@ -401,7 +401,7 @@ function confirmBulkDeleteDocuments() {
     `).join('');
 
     // Open modal
-    const modal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
+    const modal = new tabler.bootstrap.Modal(document.getElementById('bulkDeleteModal'));
     modal.show();
 }
 
@@ -479,7 +479,7 @@ async function executeBulkDeleteDocuments() {
 
 function completeBulkDeleteDocuments() {
     // Close modal and reload page
-    const modal = bootstrap.Modal.getInstance(document.getElementById('bulkDeleteModal'));
+    const modal = tabler.bootstrap.Modal.getInstance(document.getElementById('bulkDeleteModal'));
     modal.hide();
 
     // Wait for modal to close then reload
@@ -513,7 +513,7 @@ function openDocumentDetail(index, id, source) {
     document.getElementById('doc-source').querySelector('code').textContent = currentDocumentJson;
 
     // Open modal
-    const modal = new bootstrap.Modal(document.getElementById('documentDetailModal'));
+    const modal = new tabler.bootstrap.Modal(document.getElementById('documentDetailModal'));
     modal.show();
 }
 

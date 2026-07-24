@@ -112,13 +112,13 @@ fn render_endpoints_list(
                         <form id="select-form-{}" action="/endpoints/{}/select" method="post" style="display: none;"></form>
                         <div class="btn-list">
                             <button
-                                class="btn btn-sm btn-icon btn-success"
+                                class="btn btn-icon btn-success"
                                 onclick="event.stopPropagation(); testConnection(event, {}, '{}')"
                                 title="Test connection">
                                 <i class="ti ti-plug-connected"></i>
                             </button>
                             <button
-                                class="btn btn-sm btn-icon btn-ghost-primary"
+                                class="btn btn-icon btn-ghost-primary"
                                 onclick="event.stopPropagation(); openEditEndpoint(this);"
                                 data-endpoint-id="{}"
                                 data-endpoint-name="{}"
@@ -130,13 +130,13 @@ fn render_endpoints_list(
                                 <i class="ti ti-pencil"></i>
                             </button>
                             <button
-                                class="btn btn-sm btn-icon btn-ghost-secondary"
+                                class="btn btn-icon btn-ghost-secondary"
                                 onclick="event.stopPropagation(); document.getElementById('select-form-{}').submit();"
                                 title="Use this endpoint">
                                 <i class="ti ti-check"></i>
                             </button>
                             <button
-                                class="btn btn-sm btn-icon btn-ghost-danger"
+                                class="btn btn-icon btn-ghost-danger"
                                 onclick="event.stopPropagation(); confirmDelete({}, '{}');"
                                 title="Delete">
                                 <i class="ti ti-trash"></i>

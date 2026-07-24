@@ -321,7 +321,7 @@
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{% if ctx.base_path == "/" %}/static/vendor/chart/js/chart.umd.min.js{% else %}{{ ctx.base_path }}/static/vendor/chart/js/chart.umd.min.js{% endif %}"></script>
 <style>
     .summary-main-table,
     .summary-details-table {
@@ -437,7 +437,7 @@ function bulkAction(action) {
 
 // Show bulk operation modal with confirmation
 function showBulkOperationModal(action, indices) {
-    const modal = new bootstrap.Modal(document.getElementById('bulk-operation-modal'), {
+    const modal = new tabler.bootstrap.Modal(document.getElementById('bulk-operation-modal'), {
         backdrop: 'static',
         keyboard: false
     });
@@ -664,7 +664,7 @@ async function executeBulkOperation(action, indices) {
 // Complete bulk operation and refresh table
 function completeBulkOperation() {
     // Close modal
-    const modal = bootstrap.Modal.getInstance(document.getElementById('bulk-operation-modal'));
+    const modal = tabler.bootstrap.Modal.getInstance(document.getElementById('bulk-operation-modal'));
     if (modal) {
         modal.hide();
     }
@@ -694,7 +694,7 @@ function openIndexDetail(indexName) {
         // Show modal with explicit backdrop configuration
         const modalElement = document.getElementById('index-detail-modal');
         if (modalElement) {
-            const modal = new bootstrap.Modal(modalElement, {
+            const modal = new tabler.bootstrap.Modal(modalElement, {
                 backdrop: true,  // Show backdrop (shadow)
                 keyboard: true,  // Close on ESC
                 focus: true      // Focus on modal
@@ -726,7 +726,7 @@ async function openNewMapping(indexName) {
     document.getElementById('new-mapping-settings-json').value = 'Loading...';
     document.getElementById('new-mapping-json').value = 'Loading...';
 
-    const modal = new bootstrap.Modal(document.getElementById('new-mapping-modal'));
+    const modal = new tabler.bootstrap.Modal(document.getElementById('new-mapping-modal'));
     modal.show();
 
     try {
@@ -820,7 +820,7 @@ document.getElementById('new-mapping-create-btn')?.addEventListener('click', asy
             throw new Error(await response.text() || 'Failed to create index');
         }
 
-        bootstrap.Modal.getInstance(document.getElementById('new-mapping-modal'))?.hide();
+        tabler.bootstrap.Modal.getInstance(document.getElementById('new-mapping-modal'))?.hide();
         refreshIndicesTable();
     } catch (err) {
         showNewMappingError(err.message);
@@ -843,7 +843,7 @@ async function openIndexAliases(indexName) {
     document.getElementById('alias-write-index').checked = false;
     document.getElementById('alias-error').style.display = 'none';
 
-    const modal = new bootstrap.Modal(document.getElementById('index-aliases-modal'));
+    const modal = new tabler.bootstrap.Modal(document.getElementById('index-aliases-modal'));
     modal.show();
 
     await loadAliases(indexName);
@@ -928,7 +928,7 @@ function openRenameAlias(alias, isWrite) {
     document.getElementById('alias-rename-current').textContent = alias;
     document.getElementById('alias-rename-input').value = alias;
     document.getElementById('alias-rename-error').style.display = 'none';
-    const modal = new bootstrap.Modal(document.getElementById('alias-rename-modal'));
+    const modal = new tabler.bootstrap.Modal(document.getElementById('alias-rename-modal'));
     modal.show();
 }
 
@@ -940,7 +940,7 @@ function openRemoveAlias(alias, backingCount) {
         ? `Alias will remain on ${backingCount - 1} other index${backingCount - 1 === 1 ? '' : 'es'}.`
         : 'Alias is only attached to this index.';
     document.getElementById('alias-remove-error').style.display = 'none';
-    const modal = new bootstrap.Modal(document.getElementById('alias-remove-modal'));
+    const modal = new tabler.bootstrap.Modal(document.getElementById('alias-remove-modal'));
     modal.show();
 }
 
@@ -1060,7 +1060,7 @@ document.getElementById('alias-rename-confirm')?.addEventListener('click', async
     try {
         await postAliasAction({ action: 'rename', alias, new_alias: newAlias, is_write_index: renameAliasIsWrite });
         aliasModalDirty = true;
-        bootstrap.Modal.getInstance(document.getElementById('alias-rename-modal'))?.hide();
+        tabler.bootstrap.Modal.getInstance(document.getElementById('alias-rename-modal'))?.hide();
         await loadAliases(currentAliasIndex);
     } catch (err) {
         error.textContent = err.message;
@@ -1077,7 +1077,7 @@ document.getElementById('alias-remove-confirm')?.addEventListener('click', async
     try {
         await postAliasAction({ action: 'remove', alias: removeAliasState.alias });
         aliasModalDirty = true;
-        bootstrap.Modal.getInstance(document.getElementById('alias-remove-modal'))?.hide();
+        tabler.bootstrap.Modal.getInstance(document.getElementById('alias-remove-modal'))?.hide();
         removeAliasState = null;
         await loadAliases(currentAliasIndex);
     } catch (err) {
@@ -1100,7 +1100,7 @@ document.addEventListener('keydown', (event) => {
     if (removeModalEl && removeModalEl.classList.contains('show')) {
         event.preventDefault();
         event.stopPropagation();
-        bootstrap.Modal.getInstance(removeModalEl)?.hide();
+        tabler.bootstrap.Modal.getInstance(removeModalEl)?.hide();
         return;
     }
 
@@ -1108,7 +1108,7 @@ document.addEventListener('keydown', (event) => {
     if (renameModalEl && renameModalEl.classList.contains('show')) {
         event.preventDefault();
         event.stopPropagation();
-        bootstrap.Modal.getInstance(renameModalEl)?.hide();
+        tabler.bootstrap.Modal.getInstance(renameModalEl)?.hide();
         return;
     }
 
@@ -1116,7 +1116,7 @@ document.addEventListener('keydown', (event) => {
     if (aliasesModalEl && aliasesModalEl.classList.contains('show')) {
         event.preventDefault();
         event.stopPropagation();
-        bootstrap.Modal.getInstance(aliasesModalEl)?.hide();
+        tabler.bootstrap.Modal.getInstance(aliasesModalEl)?.hide();
     }
 }, true);
 
@@ -1263,7 +1263,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 target: '#indices-summary-content',
                 swap: 'innerHTML'
             }).then(() => {
-                const modal = new bootstrap.Modal(document.getElementById('indices-summary-modal'));
+                const modal = new tabler.bootstrap.Modal(document.getElementById('indices-summary-modal'));
                 modal.show();
             });
         });

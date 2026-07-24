@@ -331,7 +331,7 @@ function showConfirmationModal(method, path, body) {
     document.getElementById('confirm-method').textContent = method;
     document.getElementById('confirm-path').textContent = path;
 
-    const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+    const modal = new tabler.bootstrap.Modal(document.getElementById('confirmModal'));
 
     // Set up confirm button
     document.getElementById('confirm-execute-btn').onclick = async function() {
