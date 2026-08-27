@@ -153,6 +153,61 @@ fn default_hide_internal() -> bool {
     true // Defaultně skryté
 }
 
+const MAX_ALIAS_SCOPE_LENGTH: usize = 3_000;
+
+fn alias_scope_batches<'a>(index_names: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut batches = Vec::new();
+    let mut current = String::new();
+
+    for index_name in index_names {
+        let added_length = index_name.len() + usize::from(!current.is_empty());
+        if !current.is_empty() && current.len() + added_length > MAX_ALIAS_SCOPE_LENGTH {
+            batches.push(std::mem::take(&mut current));
+        }
+        if !current.is_empty() {
+            current.push(',');
+        }
+        current.push_str(index_name);
+    }
+
+    if !current.is_empty() {
+        batches.push(current);
+    }
+    batches
+}
+
+async fn fetch_aliases_for_indices(
+    client: &EsClient,
+    indices: &[IndexInfo],
+) -> anyhow::Result<Vec<AliasInfo>> {
+    let mut aliases = Vec::new();
+    for alias_scope in alias_scope_batches(indices.iter().map(|index| index.index.as_str())) {
+        let aliases_path = format!("/{alias_scope}/_alias");
+        let aliases_response: serde_json::Value = client.get(&aliases_path).await?;
+        if let Some(indices_map) = aliases_response.as_object() {
+            for (index_name, index_data) in indices_map {
+                let Some(alias_map) = index_data
+                    .get("aliases")
+                    .and_then(|value| value.as_object())
+                else {
+                    continue;
+                };
+                for (alias_name, alias_meta) in alias_map {
+                    aliases.push(AliasInfo {
+                        alias: alias_name.clone(),
+                        index: index_name.clone(),
+                        is_write_index: alias_meta
+                            .get("is_write_index")
+                            .and_then(|value| value.as_bool())
+                            .map(|value| value.to_string()),
+                    });
+                }
+            }
+        }
+    }
+    Ok(aliases)
+}
+
 async fn fetch_alias_backing_indices(
     client: &EsClient,
     alias_name: &str,
@@ -1172,37 +1227,7 @@ async fn load_indices_data(
     }
 
     // Načti aliasy
-    let aliases: Vec<AliasInfo> = if !indices.is_empty() {
-        let alias_scope = indices
-            .iter()
-            .map(|idx| idx.index.as_str())
-            .collect::<Vec<_>>()
-            .join(",");
-        let aliases_path = format!("/{}/_alias?format=json", alias_scope);
-        let aliases_response: serde_json::Value =
-            client.get(&aliases_path).await.unwrap_or_default();
-        let mut aliases = Vec::new();
-        if let Some(indices_map) = aliases_response.as_object() {
-            for (index_name, index_data) in indices_map {
-                let Some(alias_map) = index_data.get("aliases").and_then(|v| v.as_object()) else {
-                    continue;
-                };
-                for (alias_name, alias_meta) in alias_map {
-                    aliases.push(AliasInfo {
-                        alias: alias_name.clone(),
-                        index: index_name.clone(),
-                        is_write_index: alias_meta
-                            .get("is_write_index")
-                            .and_then(|v| v.as_bool())
-                            .map(|v| v.to_string()),
-                    });
-                }
-            }
-        }
-        aliases
-    } else {
-        Vec::new()
-    };
+    let aliases = fetch_aliases_for_indices(&client, &indices).await?;
 
     // Vytvoř mapu index -> seznam aliasů
     let mut aliases_map: HashMap<String, Vec<IndexAlias>> = HashMap::new();
@@ -1614,6 +1639,33 @@ async fn perform_delete_index(client: &EsClient, index_name: &str) -> anyhow::Re
     let path = format!("/{}", index_name);
     let _response: serde_json::Value = client.delete(&path).await?;
     Ok("Index smazán".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_ALIAS_SCOPE_LENGTH, alias_scope_batches};
+
+    #[test]
+    fn alias_scopes_are_batched_before_urls_get_too_long() {
+        let names: Vec<String> = (0..100)
+            .map(|index| format!("long-index-name-{index:03}-{}", "x".repeat(64)))
+            .collect();
+        let batches = alias_scope_batches(names.iter().map(String::as_str));
+
+        assert!(batches.len() > 1);
+        assert!(
+            batches
+                .iter()
+                .all(|batch| batch.len() <= MAX_ALIAS_SCOPE_LENGTH)
+        );
+        assert_eq!(
+            batches
+                .iter()
+                .flat_map(|batch| batch.split(','))
+                .collect::<Vec<_>>(),
+            names.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+    }
 }
 
 async fn perform_close_index(client: &EsClient, index_name: &str) -> anyhow::Result<String> {

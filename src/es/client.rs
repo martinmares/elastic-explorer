@@ -199,6 +199,24 @@ impl EsClient {
         self.handle_raw_response(response).await
     }
 
+    /// Raw POST request without a request body.
+    pub async fn post_empty_raw(&self, path: &str) -> Result<(u16, String)> {
+        let url = format!("{}/{}", self.base_url, path.trim_start_matches('/'));
+
+        let mut request = self.client.post(&url);
+
+        if let (Some(username), Some(password)) = (&self.username, &self.password) {
+            request = request.basic_auth(username, Some(password));
+        }
+
+        let response = request
+            .send()
+            .await
+            .context("Failed to send POST request")?;
+
+        self.handle_raw_response(response).await
+    }
+
     /// Raw PUT request (returns text instead of JSON)
     pub async fn put_raw(&self, path: &str, body: Value) -> Result<(u16, String)> {
         let url = format!("{}/{}", self.base_url, path.trim_start_matches('/'));

@@ -35,6 +35,14 @@ pub struct ExecuteResponse {
     pub is_json: bool,
 }
 
+fn parse_optional_json_body(body: &str) -> Result<Option<serde_json::Value>, serde_json::Error> {
+    if body.trim().is_empty() {
+        Ok(None)
+    } else {
+        serde_json::from_str(body).map(Some)
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct ConsoleData {
     pub history: Vec<ConsoleHistoryWithEndpoint>,
@@ -284,9 +292,21 @@ pub async fn execute_request(
             }
         }
         "POST" => {
-            let body_json: serde_json::Value =
-                serde_json::from_str(&req.body).unwrap_or(serde_json::json!({}));
-            match client.post_raw(&req.path, body_json).await {
+            let body = match parse_optional_json_body(&req.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return Ok(Json(ExecuteResponse {
+                        status: StatusCode::BAD_REQUEST.as_u16(),
+                        body: format!("Invalid JSON request body: {error}"),
+                        is_json: false,
+                    }));
+                }
+            };
+            let result = match body {
+                Some(body) => client.post_raw(&req.path, body).await,
+                None => client.post_empty_raw(&req.path).await,
+            };
+            match result {
                 Ok((status, body)) => {
                     // Zkus parsovat jako JSON a formatovat
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
@@ -370,4 +390,19 @@ pub async fn execute_request(
         body: response_body,
         is_json,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_optional_json_body;
+
+    #[test]
+    fn parses_optional_console_body() {
+        assert_eq!(parse_optional_json_body("  \n").unwrap(), None);
+        assert_eq!(
+            parse_optional_json_body(r#"{"acknowledged":true}"#).unwrap(),
+            Some(serde_json::json!({"acknowledged": true}))
+        );
+        assert!(parse_optional_json_body("{").is_err());
+    }
 }
