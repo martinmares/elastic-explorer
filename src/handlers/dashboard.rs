@@ -46,7 +46,8 @@ pub async fn dashboard(
         active_endpoint,
         state.base_path.clone(),
         state.logout_url.clone(),
-    );
+    )
+    .with_snapshots(state.snapshots.is_some());
     let template = DashboardTemplate {
         endpoint_name,
         ctx,

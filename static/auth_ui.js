@@ -53,6 +53,9 @@
         }
 
         item.style.display = "";
+        document.querySelectorAll(".admin-only").forEach((element) => {
+            element.style.display = session.role === "Admin" ? "" : "none";
+        });
     };
 
     document.addEventListener("DOMContentLoaded", async () => {

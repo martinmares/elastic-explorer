@@ -147,7 +147,7 @@
                 </h3>
                 <div class="card-actions" id="response-actions" style="display: none;">
                     <span class="badge bg-success me-2" id="response-status"></span>
-                    <button type="button" class="btn btn-sm btn-ghost-primary" onclick="copyResponseToClipboard()">
+                    <button type="button" class="btn btn-sm btn-ghost-primary" onclick="copyResponseToClipboard(this)">
                         <i class="ti ti-copy"></i>
                     </button>
                 </div>
@@ -192,6 +192,7 @@
                 {% endif %}
             </div>
 
+            <div id="history-content">
             {% if data.is_some() && !data.as_ref().unwrap().history.is_empty() %}
             {% let d = data.as_ref().unwrap() %}
             <div class="table-responsive">
@@ -249,6 +250,7 @@
                 </div>
             </div>
             {% endif %}
+            </div>
         </div>
     </div>
 </div>
@@ -293,6 +295,9 @@
 <script>
 let currentResponseBody = '';
 let historyData = {% if data.is_some() %}{{ data.as_ref().unwrap().history_json()|safe }}{% else %}[]{% endif %};
+const usesLocalHistory = {% if data.is_some() %}{{ data.as_ref().unwrap().uses_local_history }}{% else %}false{% endif %};
+const localHistoryKey = {% if data.is_some() %}{{ data.as_ref().unwrap().local_history_key_json()|safe }}{% else %}""{% endif %};
+const localHistoryEndpointName = {% if data.is_some() %}{{ data.as_ref().unwrap().local_history_endpoint_name_json()|safe }}{% else %}""{% endif %};
 
 // Toggle body textarea based on method
 document.getElementById('console-method').addEventListener('change', function() {
@@ -408,8 +413,12 @@ async function executeRequest(method, path, body) {
 
         currentResponseBody = result.body;
 
-        // Trigger history table reload via HTMX
-        htmx.trigger(document.body, 'historyUpdate');
+        if (usesLocalHistory) {
+            saveLocalHistory(method, path, body, result.status);
+        } else {
+            // Persistent mode stores history in SQLite on the backend.
+            htmx.trigger(document.body, 'historyUpdate');
+        }
 
     } catch (error) {
         console.error('Error:', error);
@@ -439,32 +448,127 @@ function loadFromHistory(method, path, body) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function copyResponseToClipboard() {
+function readLocalHistory() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(localHistoryKey) || '[]');
+        return Array.isArray(stored) ? stored : [];
+    } catch (error) {
+        console.warn('Failed to read Dev Console history:', error);
+        return [];
+    }
+}
+
+function saveLocalHistory(method, path, body, responseStatus) {
+    const history = readLocalHistory().filter(item =>
+        item.method !== method || item.path !== path || (item.body || '') !== (body || '')
+    );
+
+    history.unshift({
+        method,
+        path,
+        body: body || '',
+        response_status: responseStatus,
+        created_at: new Date().toISOString(),
+        endpoint_name: localHistoryEndpointName
+    });
+
+    try {
+        localStorage.setItem(localHistoryKey, JSON.stringify(history.slice(0, 200)));
+    } catch (error) {
+        console.warn('Failed to save Dev Console history:', error);
+    }
+
+    renderLocalHistory();
+}
+
+function historyStatusClass(status) {
+    if (status >= 200 && status < 300) return 'bg-success text-white';
+    if (status >= 300 && status < 400) return 'bg-secondary text-white';
+    if (status >= 400 && status < 500) return 'bg-warning text-dark';
+    return 'bg-danger text-white';
+}
+
+function appendHistoryCell(row, elementName, text, className = '') {
+    const cell = document.createElement('td');
+    const element = document.createElement(elementName);
+    element.className = className;
+    element.textContent = text;
+    cell.appendChild(element);
+    row.appendChild(cell);
+}
+
+function renderLocalHistory() {
+    const container = document.getElementById('history-content');
+    const history = readLocalHistory().slice(0, 50);
+    container.replaceChildren();
+
+    if (history.length === 0) {
+        const emptyBody = document.createElement('div');
+        emptyBody.className = 'card-body';
+        emptyBody.innerHTML = '<div class="empty"><div class="empty-icon"><i class="ti ti-history-off"></i></div><p class="empty-title">No History</p><p class="empty-subtitle text-muted">Request history will appear here after executing your first query</p></div>';
+        container.appendChild(emptyBody);
+        return;
+    }
+
+    const responsive = document.createElement('div');
+    responsive.className = 'table-responsive';
+    const table = document.createElement('table');
+    table.className = 'table table-vcenter card-table';
+    table.innerHTML = '<thead><tr><th style="width: 100px;">Method</th><th style="width: 200px;">Path</th><th>Body</th><th style="width: 100px;">Status</th><th style="width: 180px;">Time</th><th style="width: 150px;">Endpoint</th></tr></thead>';
+    const tbody = document.createElement('tbody');
+
+    for (const item of history) {
+        const row = document.createElement('tr');
+        row.style.cursor = 'pointer';
+        row.addEventListener('click', () => loadFromHistory(item.method, item.path, item.body));
+
+        appendHistoryCell(row, 'span', item.method, 'badge bg-blue-lt');
+        appendHistoryCell(row, 'code', item.path, 'small');
+        const bodyPreview = item.body ? (item.body.length > 50 ? `${item.body.slice(0, 50)}...` : item.body) : '-';
+        appendHistoryCell(row, 'code', bodyPreview, 'small text-muted');
+        appendHistoryCell(row, 'span', String(item.response_status), `badge ${historyStatusClass(item.response_status)}`);
+        const createdAt = new Date(item.created_at);
+        appendHistoryCell(row, 'span', Number.isNaN(createdAt.getTime()) ? item.created_at : createdAt.toLocaleString(), 'text-muted small');
+        appendHistoryCell(row, 'span', item.endpoint_name, 'badge bg-secondary-lt');
+        tbody.appendChild(row);
+    }
+
+    table.appendChild(tbody);
+    responsive.appendChild(table);
+    container.appendChild(responsive);
+}
+
+if (usesLocalHistory) {
+    renderLocalHistory();
+}
+
+async function copyResponseToClipboard(button) {
     if (!currentResponseBody) {
         alert('No response to copy');
         return;
     }
 
-    // Try modern clipboard API first
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(currentResponseBody).then(() => {
-            const btn = event.target.closest('button');
-            const originalHtml = btn.innerHTML;
-            btn.innerHTML = '<i class="ti ti-check"></i>';
-            btn.classList.add('text-success');
+    let copied = false;
 
-            setTimeout(() => {
-                btn.innerHTML = originalHtml;
-                btn.classList.remove('text-success');
-            }, 2000);
-        }).catch(err => {
-            console.error('Clipboard API failed:', err);
-            // Fallback to old method
-            fallbackCopyToClipboard(currentResponseBody);
-        });
+    if (navigator.clipboard?.writeText) {
+        try {
+            await navigator.clipboard.writeText(currentResponseBody);
+            copied = true;
+        } catch (err) {
+            // Firefox can reject the Clipboard API depending on permissions or context.
+            // The legacy fallback below still works for a direct button click.
+            console.debug('Clipboard API unavailable, using fallback:', err);
+        }
+    }
+
+    if (!copied) {
+        copied = fallbackCopyToClipboard(currentResponseBody);
+    }
+
+    if (copied) {
+        showCopySuccess(button);
     } else {
-        // Fallback for older browsers
-        fallbackCopyToClipboard(currentResponseBody);
+        alert('Failed to copy to clipboard');
     }
 }
 
@@ -474,30 +578,39 @@ function fallbackCopyToClipboard(text) {
     textarea.style.position = 'fixed';
     textarea.style.opacity = '0';
     document.body.appendChild(textarea);
+    textarea.focus();
     textarea.select();
 
     try {
-        const successful = document.execCommand('copy');
-        document.body.removeChild(textarea);
-
-        if (successful) {
-            const btn = event.target.closest('button');
-            const originalHtml = btn.innerHTML;
-            btn.innerHTML = '<i class="ti ti-check"></i>';
-            btn.classList.add('text-success');
-
-            setTimeout(() => {
-                btn.innerHTML = originalHtml;
-                btn.classList.remove('text-success');
-            }, 2000);
-        } else {
-            alert('Failed to copy to clipboard');
-        }
+        return document.execCommand('copy');
     } catch (err) {
-        document.body.removeChild(textarea);
         console.error('Fallback copy failed:', err);
-        alert('Failed to copy to clipboard');
+        return false;
+    } finally {
+        textarea.remove();
     }
+}
+
+function showCopySuccess(button) {
+    const icon = button?.querySelector('i');
+    if (!icon) {
+        return;
+    }
+
+    const existingTimer = Number(button.dataset.copyFeedbackTimer);
+    if (existingTimer) {
+        clearTimeout(existingTimer);
+    }
+
+    icon.className = 'ti ti-check';
+    button.classList.add('text-success');
+
+    const timer = setTimeout(() => {
+        icon.className = 'ti ti-copy';
+        button.classList.remove('text-success');
+        delete button.dataset.copyFeedbackTimer;
+    }, 2000);
+    button.dataset.copyFeedbackTimer = String(timer);
 }
 </script>
 {% endblock %}

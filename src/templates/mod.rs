@@ -8,6 +8,7 @@ pub struct PageContext {
     pub version: &'static str,
     pub base_path: String,
     pub logout_url: Option<String>,
+    pub snapshots_enabled: bool,
 }
 
 impl PageContext {
@@ -27,7 +28,13 @@ impl PageContext {
             version: env!("CARGO_PKG_VERSION"),
             base_path,
             logout_url,
+            snapshots_enabled: false,
         }
+    }
+
+    pub fn with_snapshots(mut self, enabled: bool) -> Self {
+        self.snapshots_enabled = enabled;
+        self
     }
 }
 
@@ -106,4 +113,10 @@ pub struct ShardsTemplate {
 pub struct ConsoleTemplate {
     pub ctx: PageContext,
     pub data: Option<crate::handlers::console::ConsoleData>,
+}
+
+#[derive(Template)]
+#[template(path = "snapshots.html")]
+pub struct SnapshotsTemplate {
+    pub ctx: PageContext,
 }

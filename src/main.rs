@@ -95,6 +95,38 @@ struct Args {
         default_value = "elastic-explorer:viewer"
     )]
     auth_group_viewer: String,
+
+    /// Enable native Elasticsearch snapshots (stateless mode only)
+    #[arg(long, env = "SNAPSHOTS_ENABLED", default_value_t = false)]
+    snapshots_enabled: bool,
+
+    /// Elasticsearch snapshot repository name
+    #[arg(long, env = "SNAPSHOT_REPOSITORY")]
+    snapshot_repository: Option<String>,
+
+    /// Literal managed index prefix; the effective pattern is PREFIX*
+    #[arg(long, env = "SNAPSHOT_INDEX_PREFIX")]
+    snapshot_index_prefix: Option<String>,
+
+    /// Elasticsearch SLM cron expression (for example: 0 0 20 * * ?)
+    #[arg(long, env = "SCHEDULED_SNAPSHOT_CRON")]
+    scheduled_snapshot_cron: Option<String>,
+
+    /// Minimum number of automatic snapshots retained by SLM
+    #[arg(long, env = "SCHEDULED_SNAPSHOT_KEEP_LAST", default_value_t = 14)]
+    scheduled_snapshot_keep_last: u32,
+
+    /// Automatic snapshot age after which SLM may delete it
+    #[arg(long, env = "SCHEDULED_SNAPSHOT_MAX_AGE_DAYS", default_value_t = 30)]
+    scheduled_snapshot_max_age_days: u32,
+
+    /// Note stored in automatic snapshot metadata
+    #[arg(
+        long,
+        env = "SCHEDULED_SNAPSHOT_NOTE",
+        default_value = "Automatic snapshot"
+    )]
+    scheduled_snapshot_note: String,
 }
 
 #[tokio::main]
@@ -153,6 +185,17 @@ async fn main() -> Result<()> {
         "auth proxy logout URL"
     );
 
+    let snapshots = handlers::snapshots::SnapshotConfig::from_args(
+        args.snapshots_enabled,
+        args.stateless,
+        args.snapshot_repository,
+        args.snapshot_index_prefix,
+        args.scheduled_snapshot_cron,
+        args.scheduled_snapshot_keep_last,
+        args.scheduled_snapshot_max_age_days,
+        args.scheduled_snapshot_note,
+    )?;
+
     let state = Arc::new(AppState {
         db,
         base_path: base_path.clone(),
@@ -163,7 +206,10 @@ async fn main() -> Result<()> {
         } else {
             None
         },
+        snapshots,
     });
+
+    handlers::snapshots::initialize(&state).await?;
 
     let auth_config = Arc::new(auth::AuthConfig {
         enabled: args.trusted_proxy_auth,
@@ -251,6 +297,32 @@ async fn main() -> Result<()> {
             post(handlers::search::bulk_delete_documents),
         )
         .route("/console/execute", post(handlers::console::execute_request))
+        .route("/snapshots", get(handlers::snapshots::snapshots_page))
+        .route("/snapshots/overview", get(handlers::snapshots::overview))
+        .route(
+            "/snapshots/create",
+            post(handlers::snapshots::create_snapshot),
+        )
+        .route(
+            "/snapshots/{name}/status",
+            get(handlers::snapshots::snapshot_status),
+        )
+        .route(
+            "/snapshots/{name}",
+            delete(handlers::snapshots::delete_snapshot),
+        )
+        .route(
+            "/snapshots/{name}/restore/safe",
+            post(handlers::snapshots::restore_safe),
+        )
+        .route(
+            "/snapshots/{name}/restore/in-place",
+            post(handlers::snapshots::restore_in_place),
+        )
+        .route(
+            "/snapshots/restore/status",
+            post(handlers::snapshots::restore_status),
+        )
         .layer(middleware::from_fn_with_state(
             auth_config.clone(),
             auth::require_admin,

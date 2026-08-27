@@ -187,7 +187,8 @@ pub async fn search_page(
         active_endpoint.clone(),
         state.base_path.clone(),
         state.logout_url.clone(),
-    );
+    )
+    .with_snapshots(state.snapshots.is_some());
 
     // Pokud není zadán index pattern nebo query, zkus načíst z cookie
     let mut query = query;

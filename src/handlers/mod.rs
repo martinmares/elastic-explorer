@@ -5,6 +5,7 @@ pub mod indices;
 pub mod nodes;
 pub mod search;
 pub mod shards;
+pub mod snapshots;
 
 use axum::{
     extract::State,

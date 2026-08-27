@@ -175,7 +175,8 @@ pub async fn shards_page(
         active_endpoint.clone(),
         state.base_path.clone(),
         state.logout_url.clone(),
-    );
+    )
+    .with_snapshots(state.snapshots.is_some());
 
     // Vezmi pattern z query, nebo z cookies (per endpoint), nebo default "*"
     let pattern = if !query.pattern.is_empty() {

@@ -65,7 +65,8 @@ pub async fn node_detail(
         active_endpoint,
         state.base_path.clone(),
         state.logout_url.clone(),
-    );
+    )
+    .with_snapshots(state.snapshots.is_some());
     let template = NodeDetailTemplate { ctx, data, node_id };
 
     template

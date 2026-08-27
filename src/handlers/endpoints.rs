@@ -22,6 +22,7 @@ pub struct AppState {
     pub logout_url: Option<String>,
     pub stateless_endpoint: Option<crate::db::models::Endpoint>,
     pub stateless_password: Option<String>,
+    pub snapshots: Option<crate::handlers::snapshots::SnapshotConfig>,
 }
 
 pub fn default_index_pattern(endpoint: &crate::db::models::Endpoint) -> Option<String> {
@@ -230,7 +231,8 @@ pub async fn list_endpoints(
         active_endpoint,
         state.base_path.clone(),
         state.logout_url.clone(),
-    );
+    )
+    .with_snapshots(state.snapshots.is_some());
 
     let template = EndpointsTemplate { endpoints, ctx };
 

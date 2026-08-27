@@ -47,11 +47,23 @@ fn parse_optional_json_body(body: &str) -> Result<Option<serde_json::Value>, ser
 pub struct ConsoleData {
     pub history: Vec<ConsoleHistoryWithEndpoint>,
     pub endpoint_filter: Option<i64>,
+    pub uses_local_history: bool,
+    local_history_key: String,
+    local_history_endpoint_name: String,
 }
 
 impl ConsoleData {
     pub fn history_json(&self) -> String {
         serde_json::to_string(&self.history).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    pub fn local_history_key_json(&self) -> String {
+        serde_json::to_string(&self.local_history_key).unwrap_or_else(|_| "\"\"".to_string())
+    }
+
+    pub fn local_history_endpoint_name_json(&self) -> String {
+        serde_json::to_string(&self.local_history_endpoint_name)
+            .unwrap_or_else(|_| "\"\"".to_string())
     }
 }
 
@@ -102,7 +114,8 @@ pub async fn console_page(
         active_endpoint.clone(),
         state.base_path.clone(),
         state.logout_url.clone(),
-    );
+    )
+    .with_snapshots(state.snapshots.is_some());
 
     // Načti historii (poslední 50 záznamů)
     let (history_records, endpoints) = if let Some(db) = &state.db {
@@ -145,6 +158,19 @@ pub async fn console_page(
     let data = ConsoleData {
         history,
         endpoint_filter: query.endpoint_filter,
+        uses_local_history: state.db.is_none(),
+        local_history_key: format!(
+            "elastic-explorer.console-history.v1:{}:{}",
+            state.base_path,
+            active_endpoint
+                .as_ref()
+                .map(|endpoint| endpoint.url.as_str())
+                .unwrap_or("no-endpoint")
+        ),
+        local_history_endpoint_name: active_endpoint
+            .as_ref()
+            .map(|endpoint| endpoint.name.clone())
+            .unwrap_or_else(|| "Stateless endpoint".to_string()),
     };
 
     let template = ConsoleTemplate {

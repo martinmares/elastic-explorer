@@ -11,6 +11,7 @@ A modern Elasticsearch cluster explorer written in Rust - a simpler and more int
 - 🔧 **Shards** - Visual shard distribution and status
 - 📝 **Templates** - Index and component template management
 - 🔐 **Secure** - Passwords stored encrypted in the local SQLite database
+- 📷 **Snapshots** - Native Elasticsearch snapshots, SLM scheduling and guarded restore workflows
 
 ## Quick Start
 
@@ -80,6 +81,47 @@ Supported `--conf-es-*` parameters (also via `.env`):
 - `--conf-es-username` / `CONF_ES_USERNAME`
 - `--conf-es-password` / `CONF_ES_PASSWORD`
 - `--conf-es-insecure` / `CONF_ES_INSECURE`
+
+### Managed snapshots (stateless mode)
+
+Snapshots use a repository already registered in Elasticsearch. `SNAPSHOT_INDEX_PREFIX`
+is a literal prefix; the application appends `*`, so `tsm-sda` manages `tsm-sda*`.
+
+```bash
+elastic-explorer --stateless \
+  --conf-es-url "http://127.0.0.1:9200" \
+  --snapshots-enabled \
+  --snapshot-repository elastic-explorer \
+  --snapshot-index-prefix tsm-sda
+```
+
+Equivalent environment variables are `SNAPSHOTS_ENABLED`,
+`SNAPSHOT_REPOSITORY`, and `SNAPSHOT_INDEX_PREFIX`. Optional automatic snapshots
+are reconciled into Elasticsearch SLM at startup:
+
+```dotenv
+SCHEDULED_SNAPSHOT_CRON=0 0 20 * * ?
+SCHEDULED_SNAPSHOT_KEEP_LAST=14
+SCHEDULED_SNAPSHOT_MAX_AGE_DAYS=30
+SCHEDULED_SNAPSHOT_NOTE=Automatic snapshot
+```
+
+SLM evaluates cron schedules in UTC. It has no policy timezone field, so a
+fixed Europe/Prague wall-clock time requires accounting for daylight-saving
+changes (or using an interval schedule such as `24h`).
+
+The Snapshots page is Admin-only. Safe restore replaces the source prefix,
+creates no aliases and refuses name collisions. In-place restore is deliberately
+non-atomic: after cluster UUID and typed-confirmation checks it deletes every
+current managed-prefix index and restores a full snapshot with aliases.
+
+Run the isolated Elasticsearch 8.19.17 integration test with:
+
+```bash
+./integration/snapshot-smoke.sh
+```
+
+Set `KEEP_SNAPSHOT_SMOKE=1` to leave the Compose cluster running on port 19200.
 
 ## Trusted proxy authentication
 

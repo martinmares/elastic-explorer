@@ -323,7 +323,8 @@ pub async fn list_indices(
         active_endpoint,
         state.base_path.clone(),
         state.logout_url.clone(),
-    );
+    )
+    .with_snapshots(state.snapshots.is_some());
     let template = IndicesTemplate { ctx, data };
 
     template
@@ -385,7 +386,8 @@ pub async fn indices_table(
         active_endpoint,
         state.base_path.clone(),
         state.logout_url.clone(),
-    );
+    )
+    .with_snapshots(state.snapshots.is_some());
     let template = IndicesTableTemplate { ctx, data };
 
     template

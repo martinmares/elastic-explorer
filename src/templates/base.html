@@ -174,6 +174,16 @@
                                     <span class="nav-link-title">Search</span>
                                 </a>
                             </li>
+                            {% if ctx.snapshots_enabled %}
+                            <li class="nav-item admin-only {% block nav_snapshots %}{% endblock %}" style="display: none;">
+                                <a class="nav-link" href="/snapshots">
+                                    <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                        <i class="ti ti-history"></i>
+                                    </span>
+                                    <span class="nav-link-title">Snapshots</span>
+                                </a>
+                            </li>
+                            {% endif %}
                             <li class="nav-item {% block nav_console %}{% endblock %}">
                                 <a class="nav-link" href="/console">
                                     <span class="nav-link-icon d-md-none d-lg-inline-block">
@@ -279,24 +289,25 @@
                 });
             };
 
-            document.addEventListener("DOMContentLoaded", () => {
-                rewriteAttrs(document);
-                if (window.htmx) {
-                    const originalAjax = window.htmx.ajax;
-                    window.htmx.ajax = function (method, url, opts) {
-                        return originalAjax.call(this, method, prefix(url), opts);
-                    };
-                }
-                if (window.fetch) {
-                    const originalFetch = window.fetch;
-                    window.fetch = function (input, init) {
-                        if (typeof input === "string") {
-                            input = prefix(input);
-                        }
-                        return originalFetch(input, init);
-                    };
-                }
-            });
+            // Install request rewriting immediately. Page-specific scripts at the
+            // end of <body> may issue their first request before DOMContentLoaded.
+            if (window.htmx) {
+                const originalAjax = window.htmx.ajax;
+                window.htmx.ajax = function (method, url, opts) {
+                    return originalAjax.call(this, method, prefix(url), opts);
+                };
+            }
+            if (window.fetch) {
+                const originalFetch = window.fetch;
+                window.fetch = function (input, init) {
+                    if (typeof input === "string") {
+                        input = prefix(input);
+                    }
+                    return originalFetch(input, init);
+                };
+            }
+
+            document.addEventListener("DOMContentLoaded", () => rewriteAttrs(document));
 
             document.addEventListener("htmx:afterSwap", (evt) => {
                 if (evt.detail && evt.detail.target) {

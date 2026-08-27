@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block title %}Snapshots - Elastic Explorer{% endblock %}
+{% block nav_snapshots %}active{% endblock %}
+{% block page_title %}Snapshots{% endblock %}
+{% block page_subtitle %}<div class="page-pretitle">Native Elasticsearch backup and restore</div>{% endblock %}
+{% block page_actions %}
+<div class="col-auto ms-auto">
+    <button class="btn btn-primary" id="create-open" disabled>
+        <i class="ti ti-camera-plus me-1"></i>Create snapshot
+    </button>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .snapshot-timeline { position: relative; margin-left: 1rem; }
+    .snapshot-timeline::before { content: ""; position: absolute; left: 15px; top: 0; bottom: 0; width: 2px; background: var(--tblr-border-color); }
+    .snapshot-entry { position: relative; padding-left: 3.5rem; margin-bottom: 1rem; }
+    .snapshot-dot { position: absolute; left: 0; top: 1.25rem; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: white; background: var(--tblr-primary); z-index: 1; }
+    .snapshot-meta { display: flex; flex-wrap: wrap; gap: .6rem 1.25rem; }
+    .operation-panel { position: sticky; top: .5rem; z-index: 5; }
+    .progress { height: .75rem; }
+    .index-picker { max-height: 18rem; overflow: auto; border: 1px solid var(--tblr-border-color); border-radius: .25rem; padding: .5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="snapshot-error" class="alert alert-danger d-none"></div>
+
+<div id="operation-panel" class="card operation-panel mb-3 d-none">
+    <div class="card-body">
+        <div class="d-flex justify-content-between mb-2"><strong id="operation-title">Operation</strong><span id="operation-percent">0%</span></div>
+        <div class="progress"><div id="operation-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div></div>
+        <div id="operation-detail" class="text-secondary small mt-2"></div>
+    </div>
+</div>
+
+<div class="row row-cards mb-3">
+    <div class="col-lg-7"><div class="card h-100"><div class="card-body">
+        <h3 class="card-title"><i class="ti ti-server me-1"></i>Managed snapshot storage</h3>
+        <dl class="row mb-0">
+            <dt class="col-sm-3">Repository</dt><dd class="col-sm-9"><code id="repository">—</code></dd>
+            <dt class="col-sm-3">Index scope</dt><dd class="col-sm-9"><code id="index-pattern">—</code></dd>
+            <dt class="col-sm-3">Cluster</dt><dd class="col-sm-9"><span id="cluster-name">—</span> <code id="cluster-uuid"></code></dd>
+            <dt class="col-sm-3">Endpoint</dt><dd class="col-sm-9"><code id="endpoint-url">—</code></dd>
+        </dl>
+    </div></div></div>
+    <div class="col-lg-5"><div class="card h-100"><div class="card-body" id="schedule-card">
+        <h3 class="card-title"><i class="ti ti-clock me-1"></i>Automatic snapshot schedule</h3>
+        <div class="text-secondary">Not configured. Set <code>SCHEDULED_SNAPSHOT_CRON</code> at startup.</div>
+    </div></div></div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <h3 class="mb-0">Restore points</h3>
+    <button class="btn btn-ghost-secondary btn-sm" id="refresh"><i class="ti ti-refresh me-1"></i>Refresh</button>
+</div>
+<div id="snapshot-list" class="snapshot-timeline"><div class="text-secondary">Loading snapshots…</div></div>
+
+<div class="modal modal-blur fade" id="create-modal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Create snapshot</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <label class="form-label">Scope</label>
+        <label class="form-check"><input class="form-check-input" type="radio" name="scope" value="all" checked><span class="form-check-label">All managed indices (<code id="create-pattern"></code>)</span></label>
+        <label class="form-check"><input class="form-check-input" type="radio" name="scope" value="selected"><span class="form-check-label">Selected indices</span></label>
+        <div id="index-picker" class="index-picker mt-2 d-none"></div>
+        <div class="mt-3"><label class="form-label">Note</label><textarea id="create-note" maxlength="1000" class="form-control" rows="3" placeholder="Why is this restore point being created?"></textarea></div>
+    </div>
+    <div class="modal-footer"><button class="btn" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary" id="create-submit">Create snapshot</button></div>
+</div></div></div>
+
+<div class="modal modal-blur fade" id="restore-modal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Restore snapshot</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="mb-3"><strong id="restore-name"></strong><div id="restore-indices" class="text-secondary small"></div></div>
+        <label class="form-check card p-3 mb-2"><input class="form-check-input" type="radio" name="restore-mode" value="safe" checked><span class="form-check-label"><strong>Safe restore under new names</strong><span class="d-block text-secondary">Replaces the source prefix and restores without aliases. Existing indices are never deleted.</span></span></label>
+        <div id="safe-options" class="ms-4 mb-3"><label class="form-label">Destination prefix</label><input id="destination-prefix" class="form-control" value="restore-test"><div class="form-hint" id="mapping-preview"></div></div>
+        <label class="form-check card p-3 border-danger"><input class="form-check-input" type="radio" name="restore-mode" value="in-place"><span class="form-check-label"><strong class="text-danger">In-place disaster recovery</strong><span class="d-block text-secondary">Non-atomic: deletes every current managed-prefix index, then restores the complete snapshot with aliases.</span></span></label>
+        <div id="in-place-options" class="ms-4 mt-2 d-none"><div class="alert alert-danger">Stop writers first. If Elasticsearch rejects restore after deletion, the managed indices stay deleted until you retry.</div><label class="form-label">Type exactly <code id="confirmation-required"></code></label><input id="confirmation" class="form-control font-monospace" autocomplete="off"></div>
+    </div>
+    <div class="modal-footer"><button class="btn" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger" id="restore-submit">Start restore</button></div>
+</div></div></div>
+
+<div class="modal modal-blur fade" id="delete-modal" tabindex="-1"><div class="modal-dialog modal-sm modal-dialog-centered"><div class="modal-content">
+    <div class="modal-status bg-danger"></div>
+    <div class="modal-body text-center py-4">
+        <i class="ti ti-alert-triangle icon mb-2 text-danger" style="font-size: 3rem;"></i>
+        <h3>Delete snapshot?</h3>
+        <div class="text-secondary">Manual snapshot <strong id="delete-name" class="text-break"></strong> will be permanently removed from the Elasticsearch repository.</div>
+    </div>
+    <div class="modal-footer">
+        <div class="w-100"><div class="row">
+            <div class="col"><button class="btn w-100" data-bs-dismiss="modal">Cancel</button></div>
+            <div class="col"><button class="btn btn-danger w-100" id="delete-submit"><i class="ti ti-trash me-1"></i>Delete</button></div>
+        </div></div>
+    </div>
+</div></div></div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(() => {
+    let data = null;
+    let selectedSnapshot = null;
+    let deleteSnapshot = null;
+    const createModal = new tabler.bootstrap.Modal(document.getElementById("create-modal"));
+    const restoreModal = new tabler.bootstrap.Modal(document.getElementById("restore-modal"));
+    const deleteModal = new tabler.bootstrap.Modal(document.getElementById("delete-modal"));
+    const $ = (id) => document.getElementById(id);
+    const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
+    const localTime = (value) => value ? new Date(value).toLocaleString() : "—";
+    const bytes = (value) => { let n = Number(value || 0), u = ["B","KB","MB","GB","TB"], i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return `${n.toFixed(i ? 1 : 0)} ${u[i]}`; };
+    const api = async (url, options = {}) => {
+        const response = await fetch(url, {headers: {"Content-Type":"application/json", ...(options.headers || {})}, ...options});
+        if (!response.ok) throw new Error((await response.text()) || `${response.status} ${response.statusText}`);
+        return response.status === 204 ? null : response.json();
+    };
+    const fail = (error) => { $("snapshot-error").textContent = error.message || String(error); $("snapshot-error").classList.remove("d-none"); };
+    const clearError = () => $("snapshot-error").classList.add("d-none");
+
+    async function load() {
+        clearError();
+        try {
+            data = await api("/snapshots/overview");
+            $("repository").textContent = data.repository;
+            $("index-pattern").textContent = data.index_pattern;
+            $("cluster-name").textContent = data.cluster_name;
+            $("cluster-uuid").textContent = data.cluster_uuid;
+            $("endpoint-url").textContent = data.endpoint_url;
+            $("create-pattern").textContent = data.index_pattern;
+            $("create-open").disabled = false;
+            renderSchedule(); renderPicker(); renderSnapshots();
+        } catch (error) { fail(error); }
+    }
+
+    function renderSchedule() {
+        if (!data.schedule) return;
+        const entry = data.schedule[Object.keys(data.schedule)[0]] || {};
+        const policy = entry.policy || {};
+        const success = entry.last_success || {};
+        $("schedule-card").innerHTML = `<h3 class="card-title"><i class="ti ti-clock me-1"></i>Automatic snapshot schedule <span class="badge bg-blue-lt">SLM</span></h3>
+            <dl class="row mb-0"><dt class="col-4">Schedule</dt><dd class="col-8"><code>${esc(policy.schedule)}</code> <span class="text-secondary">UTC</span></dd>
+            <dt class="col-4">Next run</dt><dd class="col-8">${esc(localTime(entry.next_execution_millis))}</dd>
+            <dt class="col-4">Last success</dt><dd class="col-8">${esc(localTime(success.time))}${success.snapshot_name ? ` · <code>${esc(success.snapshot_name)}</code>` : ""}</dd>
+            <dt class="col-4">Retention</dt><dd class="col-8">${esc(policy.retention?.expire_after || "—")}, minimum ${esc(policy.retention?.min_count || "—")}</dd></dl>`;
+    }
+
+    function renderPicker() {
+        $("index-picker").innerHTML = data.managed_indices.map((index, i) => `<label class="form-check mb-1"><input class="form-check-input index-choice" type="checkbox" value="${esc(index.index)}" checked><span class="form-check-label"><code>${esc(index.index)}</code> <span class="text-secondary">${esc(index["docs.count"] || "0")} docs · ${esc(index["store.size"] || "0b")}</span></span></label>`).join("") || `<span class="text-secondary">No matching indices</span>`;
+    }
+
+    function renderSnapshots() {
+        const list = $("snapshot-list");
+        if (!data.snapshots.length) { list.innerHTML = `<div class="empty"><p class="empty-title">No snapshots yet</p></div>`; return; }
+        list.innerHTML = data.snapshots.map((snapshot, index) => {
+            const meta = snapshot.metadata || {}, kind = snapshot.kind || "external";
+            const badge = kind === "scheduled" ? "bg-azure-lt" : kind === "manual" ? "bg-blue-lt" : "bg-secondary-lt";
+            const stateClass = snapshot.state === "SUCCESS" ? "bg-green-lt" : snapshot.state === "FAILED" || snapshot.state === "PARTIAL" ? "bg-red-lt" : "bg-yellow-lt";
+            const size = Object.values(snapshot.index_details || {}).reduce((sum, detail) => sum + Number(detail.size_in_bytes || 0), 0);
+            return `<div class="snapshot-entry"><div class="snapshot-dot"><i class="ti ti-camera"></i></div><div class="card"><div class="card-body"><div class="d-flex flex-column flex-lg-row justify-content-between gap-3"><div class="flex-fill">
+                <div><strong>${esc(snapshot.snapshot)}</strong> <span class="badge ${badge}">${esc(kind === "scheduled" ? "Automatic" : kind === "manual" ? "Manual" : "External")}</span> <span class="badge ${stateClass}">${esc(snapshot.state)}</span></div>
+                <div class="text-secondary mt-1">${esc(localTime(snapshot.start_time))}</div>${meta.note ? `<div class="mt-2"><i class="ti ti-note me-1"></i>${esc(meta.note)}</div>` : ""}
+                <div class="snapshot-meta text-secondary small mt-2"><span><i class="ti ti-database me-1"></i>${snapshot.indices?.length || 0} indices</span><span><i class="ti ti-stack-2 me-1"></i>${esc(size ? bytes(size) : "size unavailable")}</span><span>Scope: ${esc(meta.scope || "unknown")}</span></div>
+                </div><div class="btn-list align-self-lg-center"><button class="btn btn-primary restore-button" data-index="${index}"><i class="ti ti-history me-1"></i>Restore</button>${snapshot.can_delete ? `<button class="btn btn-outline-danger delete-button" data-index="${index}" title="Delete manual snapshot"><i class="ti ti-trash"></i></button>` : `<button class="btn btn-outline-secondary" disabled title="Automatic and external snapshots are not deleted manually"><i class="ti ti-lock"></i></button>`}</div></div></div></div></div>`;
+        }).join("");
+        document.querySelectorAll(".restore-button").forEach(button => button.onclick = () => openRestore(Number(button.dataset.index)));
+        document.querySelectorAll(".delete-button").forEach(button => button.onclick = () => removeSnapshot(Number(button.dataset.index)));
+    }
+
+    function openRestore(index) {
+        selectedSnapshot = data.snapshots[index];
+        $("restore-name").textContent = selectedSnapshot.snapshot;
+        $("restore-indices").textContent = `${selectedSnapshot.indices?.length || 0} indices from ${selectedSnapshot.metadata?.source_cluster_name || "unknown cluster"}`;
+        $("destination-prefix").value = "restore-test";
+        $("confirmation-required").textContent = `DELETE ${data.index_prefix}* ON ${data.cluster_name}`;
+        $("confirmation").value = "";
+        document.querySelector('[name="restore-mode"][value="safe"]').checked = true;
+        updateRestoreMode(); updatePreview(); restoreModal.show();
+    }
+    function updatePreview() {
+        const destination = $("destination-prefix").value;
+        const examples = (selectedSnapshot?.indices || []).slice(0, 3).map(name => `${name} → ${name.replace(data.index_prefix, destination)}`);
+        $("mapping-preview").textContent = examples.join("; ");
+    }
+    function updateRestoreMode() {
+        const mode = document.querySelector('[name="restore-mode"]:checked').value;
+        $("safe-options").classList.toggle("d-none", mode !== "safe");
+        $("in-place-options").classList.toggle("d-none", mode !== "in-place");
+    }
+
+    async function removeSnapshot(index) {
+        deleteSnapshot = data.snapshots[index];
+        $("delete-name").textContent = deleteSnapshot.snapshot;
+        deleteModal.show();
+    }
+
+    async function confirmRemoveSnapshot() {
+        if (!deleteSnapshot) return;
+        $("delete-submit").disabled = true;
+        try {
+            await api(`/snapshots/${encodeURIComponent(deleteSnapshot.snapshot)}`, {method:"DELETE"});
+            deleteModal.hide();
+            deleteSnapshot = null;
+            await load();
+        } catch (error) {
+            fail(error);
+        } finally {
+            $("delete-submit").disabled = false;
+        }
+    }
+
+    async function createSnapshot() {
+        const scope = document.querySelector('[name="scope"]:checked').value;
+        const indices = [...document.querySelectorAll(".index-choice:checked")].map(input => input.value);
+        $("create-submit").disabled = true;
+        try {
+            const result = await api("/snapshots/create", {method:"POST", body:JSON.stringify({scope, indices, note:$("create-note").value})});
+            createModal.hide(); monitorSnapshot(result.snapshot);
+        } catch (error) { fail(error); } finally { $("create-submit").disabled = false; }
+    }
+
+    async function restore() {
+        const mode = document.querySelector('[name="restore-mode"]:checked').value;
+        const path = mode === "safe" ? "safe" : "in-place";
+        const body = mode === "safe" ? {destination_prefix:$("destination-prefix").value.trim()} : {confirmation:$("confirmation").value};
+        $("restore-submit").disabled = true;
+        try {
+            const result = await api(`/snapshots/${encodeURIComponent(selectedSnapshot.snapshot)}/restore/${path}`, {method:"POST", body:JSON.stringify(body)});
+            restoreModal.hide(); monitorRestore(result.destination_indices, mode);
+        } catch (error) { fail(error); } finally { $("restore-submit").disabled = false; }
+    }
+
+    function showProgress(title, status) {
+        $("operation-panel").classList.remove("d-none"); $("operation-title").textContent = title;
+        $("operation-bar").classList.add("progress-bar-animated");
+        $("operation-percent").textContent = `${status.percent || 0}%`; $("operation-bar").style.width = `${status.percent || 0}%`;
+        $("operation-detail").textContent = `${status.state} · ${bytes(status.processed_bytes || status.recovered_bytes)} / ${bytes(status.total_bytes)}`;
+    }
+    function finishOperation() {
+        $("operation-panel").classList.add("d-none");
+        $("operation-bar").classList.remove("progress-bar-animated");
+        $("operation-bar").style.width = "0%";
+    }
+    async function monitorSnapshot(name) {
+        try { const status = await api(`/snapshots/${encodeURIComponent(name)}/status`); showProgress(`Creating ${name}`, status); if (["SUCCESS","FAILED","PARTIAL"].includes(status.state)) { await load(); if (status.state === "SUCCESS") finishOperation(); return; } } catch (_) {}
+        setTimeout(() => monitorSnapshot(name), 1000);
+    }
+    async function monitorRestore(indices, mode) {
+        try { const status = await api("/snapshots/restore/status", {method:"POST", body:JSON.stringify({indices})}); showProgress(`${mode === "safe" ? "Safe" : "In-place"} restore`, status); if (status.state === "SUCCESS") { await load(); finishOperation(); return; } } catch (error) { fail(error); return; }
+        setTimeout(() => monitorRestore(indices, mode), 1000);
+    }
+
+    $("create-open").onclick = () => createModal.show(); $("create-submit").onclick = createSnapshot; $("restore-submit").onclick = restore; $("delete-submit").onclick = confirmRemoveSnapshot; $("refresh").onclick = load;
+    document.querySelectorAll('[name="scope"]').forEach(input => input.onchange = () => $("index-picker").classList.toggle("d-none", input.value !== "selected" || !input.checked));
+    document.querySelectorAll('[name="restore-mode"]').forEach(input => input.onchange = updateRestoreMode); $("destination-prefix").oninput = updatePreview;
+    load();
+})();
+</script>
+{% endblock %}
