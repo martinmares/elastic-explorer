@@ -3,7 +3,7 @@
 {% block title %}Snapshots - Elastic Explorer{% endblock %}
 {% block nav_snapshots %}active{% endblock %}
 {% block page_title %}Snapshots{% endblock %}
-{% block page_subtitle %}<div class="page-pretitle">Native Elasticsearch backup and restore</div>{% endblock %}
+{% block page_subtitle %}<div class="text-muted">Persistent Elasticsearch restore points stored in this repository</div>{% endblock %}
 {% block page_actions %}
 <div class="col-auto ms-auto">
     <button class="btn btn-primary" id="create-open" disabled>
@@ -14,14 +14,19 @@
 
 {% block extra_head %}
 <style>
-    .snapshot-timeline { position: relative; margin-left: 1rem; }
-    .snapshot-timeline::before { content: ""; position: absolute; left: 15px; top: 0; bottom: 0; width: 2px; background: var(--tblr-border-color); }
-    .snapshot-entry { position: relative; padding-left: 3.5rem; margin-bottom: 1rem; }
-    .snapshot-dot { position: absolute; left: 0; top: 1.25rem; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: white; background: var(--tblr-primary); z-index: 1; }
+    .snapshot-timeline { position: relative; padding-left: 3.5rem; }
+    .snapshot-timeline::before { content: ""; position: absolute; left: 1.45rem; top: 1.5rem; bottom: 1.5rem; width: 2px; background: var(--tblr-border-color); }
+    .snapshot-entry { position: relative; margin-bottom: 1.25rem; }
+    .snapshot-marker { position: absolute; left: -3.5rem; top: 1.25rem; width: 3rem; height: 3rem; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--tblr-primary); color: white; z-index: 1; box-shadow: 0 0 0 .35rem var(--tblr-body-bg); }
+    .snapshot-marker-scheduled { background: var(--tblr-purple); }
+    .snapshot-marker-external { background: var(--tblr-secondary); }
+    .snapshot-card { transition: transform .15s ease, box-shadow .15s ease; }
+    .snapshot-card:hover { transform: translateY(-1px); box-shadow: var(--tblr-box-shadow-card); }
     .snapshot-meta { display: flex; flex-wrap: wrap; gap: .6rem 1.25rem; }
     .operation-panel { position: sticky; top: .5rem; z-index: 5; }
     .progress { height: .75rem; }
     .index-picker { max-height: 18rem; overflow: auto; border: 1px solid var(--tblr-border-color); border-radius: .25rem; padding: .5rem; }
+    @media (max-width: 767px) { .snapshot-timeline { padding-left: 0; } .snapshot-timeline::before, .snapshot-marker { display: none; } }
 </style>
 {% endblock %}
 
@@ -36,24 +41,35 @@
     </div>
 </div>
 
-<div class="row row-cards mb-3">
-    <div class="col-lg-7"><div class="card h-100"><div class="card-body">
-        <h3 class="card-title"><i class="ti ti-server me-1"></i>Managed snapshot storage</h3>
-        <dl class="row mb-0">
-            <dt class="col-sm-3">Repository</dt><dd class="col-sm-9"><code id="repository">—</code></dd>
-            <dt class="col-sm-3">Index scope</dt><dd class="col-sm-9"><code id="index-pattern">—</code></dd>
-            <dt class="col-sm-3">Cluster</dt><dd class="col-sm-9"><span id="cluster-name">—</span> <code id="cluster-uuid"></code></dd>
-            <dt class="col-sm-3">Endpoint</dt><dd class="col-sm-9"><code id="endpoint-url">—</code></dd>
-        </dl>
-    </div></div></div>
-    <div class="col-lg-5"><div class="card h-100"><div class="card-body" id="schedule-card">
-        <h3 class="card-title"><i class="ti ti-clock me-1"></i>Automatic snapshot schedule</h3>
-        <div class="text-secondary">Not configured. Set <code>SCHEDULED_SNAPSHOT_CRON</code> at startup.</div>
-    </div></div></div>
+<div class="alert alert-info mb-4">
+    <div class="d-flex">
+        <i class="ti ti-server fs-2 me-3"></i>
+        <div>
+            <strong>Managed storage</strong>
+            <div class="text-muted small">
+                Repository <code id="repository">—</code>
+                <span class="mx-1">·</span>Index scope <code id="index-pattern">—</code>
+                <span class="mx-1">·</span>Cluster <span id="cluster-name">—</span> <code id="cluster-uuid"></code>
+                <span class="mx-1">·</span>Endpoint <code id="endpoint-url">—</code>
+            </div>
+        </div>
+    </div>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mb-2">
-    <h3 class="mb-0">Restore points</h3>
+<div class="card mb-4 border-azure" id="schedule-card">
+    <div class="card-header">
+        <div>
+            <h3 class="card-title"><i class="ti ti-clock-cog me-2"></i>Automatic snapshot schedule</h3>
+            <div class="text-muted small" id="schedule-source">Configured from <code>SCHEDULED_SNAPSHOT_*</code> for this stateless connection</div>
+        </div>
+        <div class="card-actions"><span class="badge bg-azure-lt"><span class="status-dot bg-azure me-1"></span>Waiting</span></div>
+    </div>
+    <div class="card-body" id="schedule-body">
+        <div class="text-secondary">Not configured. Set <code>SCHEDULED_SNAPSHOT_CRON</code> at startup.</div>
+    </div>
+</div>
+
+<div class="d-flex justify-content-end mb-2">
     <button class="btn btn-ghost-secondary btn-sm" id="refresh"><i class="ti ti-refresh me-1"></i>Refresh</button>
 </div>
 <div id="snapshot-list" class="snapshot-timeline"><div class="text-secondary">Loading snapshots…</div></div>
@@ -109,7 +125,20 @@
     const deleteModal = new tabler.bootstrap.Modal(document.getElementById("delete-modal"));
     const $ = (id) => document.getElementById(id);
     const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
-    const localTime = (value) => value ? new Date(value).toLocaleString() : "—";
+    const localTime = (value) => {
+        if (!value) return "—";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "—";
+        return new Intl.DateTimeFormat(undefined, {
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", second: "2-digit",
+            timeZoneName: "short"
+        }).format(date);
+    };
+    const isoTime = (value) => {
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+    };
     const bytes = (value) => { let n = Number(value || 0), u = ["B","KB","MB","GB","TB"], i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return `${n.toFixed(i ? 1 : 0)} ${u[i]}`; };
     const api = async (url, options = {}) => {
         const response = await fetch(url, {headers: {"Content-Type":"application/json", ...(options.headers || {})}, ...options});
@@ -135,15 +164,24 @@
     }
 
     function renderSchedule() {
-        if (!data.schedule) return;
+        if (!data.schedule) {
+            $("schedule-source").innerHTML = `Not configured for this stateless connection`;
+            return;
+        }
         const entry = data.schedule[Object.keys(data.schedule)[0]] || {};
         const policy = entry.policy || {};
         const success = entry.last_success || {};
-        $("schedule-card").innerHTML = `<h3 class="card-title"><i class="ti ti-clock me-1"></i>Automatic snapshot schedule <span class="badge bg-blue-lt">SLM</span></h3>
-            <dl class="row mb-0"><dt class="col-4">Schedule</dt><dd class="col-8"><code>${esc(policy.schedule)}</code> <span class="text-secondary">UTC</span></dd>
-            <dt class="col-4">Next run</dt><dd class="col-8">${esc(localTime(entry.next_execution_millis))}</dd>
-            <dt class="col-4">Last success</dt><dd class="col-8">${esc(localTime(success.time))}${success.snapshot_name ? ` · <code>${esc(success.snapshot_name)}</code>` : ""}</dd>
-            <dt class="col-4">Retention</dt><dd class="col-8">${esc(policy.retention?.expire_after || "—")}, minimum ${esc(policy.retention?.min_count || "—")}</dd></dl>`;
+        const note = policy.config?.metadata?.note || "";
+        $("schedule-body").innerHTML = `<div class="row g-3">
+            <div class="col-md-3"><div class="text-muted small">Index scope</div><div><i class="ti ti-filter me-1"></i>${esc(data.index_pattern)}</div></div>
+            <div class="col-md-3"><div class="text-muted small">Schedule</div><div><code>${esc(policy.schedule)}</code></div><div class="text-muted small">UTC</div></div>
+            <div class="col-md-3"><div class="text-muted small">Next run</div><time title="${esc(isoTime(entry.next_execution_millis))}">${esc(localTime(entry.next_execution_millis))}</time></div>
+            <div class="col-md-3"><div class="text-muted small">Last run</div>${success.time ? `<time title="${esc(success.time)}">${esc(localTime(success.time))}</time><div class="small text-success"${success.snapshot_name ? ` title="${esc(success.snapshot_name)}"` : ""}>Completed</div>` : `<span class="text-muted">Not run yet</span>`}</div>
+        </div>
+        <div class="row g-3 mt-1">
+            <div class="col-md-6"><span class="text-muted small me-2">Retention</span>Keep at least ${esc(policy.retention?.min_count || "—")}; delete older than ${esc(policy.retention?.expire_after || "—")}</div>
+            ${note ? `<div class="col-md-6"><span class="text-muted small me-2">Note</span>${esc(note)}</div>` : ""}
+        </div>`;
     }
 
     function renderPicker() {
@@ -152,17 +190,30 @@
 
     function renderSnapshots() {
         const list = $("snapshot-list");
-        if (!data.snapshots.length) { list.innerHTML = `<div class="empty"><p class="empty-title">No snapshots yet</p></div>`; return; }
+        if (!data.snapshots.length) { list.className = ""; list.innerHTML = `<div class="card"><div class="empty"><div class="empty-img"><i class="ti ti-history" style="font-size:5rem"></i></div><p class="empty-title">No snapshots yet</p><p class="empty-subtitle text-muted">Create the first persistent restore point.</p></div></div>`; return; }
+        list.className = "snapshot-timeline";
         list.innerHTML = data.snapshots.map((snapshot, index) => {
             const meta = snapshot.metadata || {}, kind = snapshot.kind || "external";
-            const badge = kind === "scheduled" ? "bg-azure-lt" : kind === "manual" ? "bg-blue-lt" : "bg-secondary-lt";
+            const scheduled = kind === "scheduled";
+            const manual = kind === "manual";
+            const kindLabel = scheduled ? "Automatic snapshot" : manual ? "Manual snapshot" : "External snapshot";
+            const kindBadge = scheduled ? "bg-purple-lt" : manual ? "bg-azure-lt" : "bg-secondary-lt";
+            const markerClass = scheduled ? "snapshot-marker-scheduled" : manual ? "" : "snapshot-marker-external";
+            const markerIcon = scheduled ? "ti-clock-cog" : manual ? "ti-hand-click" : "ti-camera";
             const stateClass = snapshot.state === "SUCCESS" ? "bg-green-lt" : snapshot.state === "FAILED" || snapshot.state === "PARTIAL" ? "bg-red-lt" : "bg-yellow-lt";
             const size = Object.values(snapshot.index_details || {}).reduce((sum, detail) => sum + Number(detail.size_in_bytes || 0), 0);
-            return `<div class="snapshot-entry"><div class="snapshot-dot"><i class="ti ti-camera"></i></div><div class="card"><div class="card-body"><div class="d-flex flex-column flex-lg-row justify-content-between gap-3"><div class="flex-fill">
-                <div><strong>${esc(snapshot.snapshot)}</strong> <span class="badge ${badge}">${esc(kind === "scheduled" ? "Automatic" : kind === "manual" ? "Manual" : "External")}</span> <span class="badge ${stateClass}">${esc(snapshot.state)}</span></div>
-                <div class="text-secondary mt-1">${esc(localTime(snapshot.start_time))}</div>${meta.note ? `<div class="mt-2"><i class="ti ti-note me-1"></i>${esc(meta.note)}</div>` : ""}
-                <div class="snapshot-meta text-secondary small mt-2"><span><i class="ti ti-database me-1"></i>${snapshot.indices?.length || 0} indices</span><span><i class="ti ti-stack-2 me-1"></i>${esc(size ? bytes(size) : "size unavailable")}</span><span>Scope: ${esc(meta.scope || "unknown")}</span></div>
-                </div><div class="btn-list align-self-lg-center"><button class="btn btn-primary restore-button" data-index="${index}"><i class="ti ti-history me-1"></i>Restore</button>${snapshot.can_delete ? `<button class="btn btn-outline-danger delete-button" data-index="${index}" title="Delete manual snapshot"><i class="ti ti-trash"></i></button>` : `<button class="btn btn-outline-secondary" disabled title="Automatic and external snapshots are not deleted manually"><i class="ti ti-lock"></i></button>`}</div></div></div></div></div>`;
+            return `<div class="snapshot-entry">
+                <div class="snapshot-marker ${markerClass}"><i class="ti ${markerIcon}"></i></div>
+                <div class="card snapshot-card"><div class="card-body"><div class="row align-items-center g-3">
+                    <div class="col">
+                        <div class="d-flex align-items-center flex-wrap gap-2 mb-1"><h3 class="card-title mb-0">${esc(data.cluster_name)}</h3><span class="badge ${kindBadge}"><i class="ti ${markerIcon} me-1"></i>${kindLabel}</span><span class="badge ${stateClass}">${esc(snapshot.state)}</span><span class="badge bg-secondary-lt">${esc(meta.scope || "unknown")}</span></div>
+                        <div class="text-muted"><time title="${esc(snapshot.start_time)}">${esc(localTime(snapshot.start_time))}</time></div>
+                        <div class="mt-2">${meta.note ? `<div class="text-secondary"><i class="ti ti-note me-1"></i>${esc(meta.note)}</div>` : `<div class="text-muted"><i class="ti ti-note me-1"></i>No note</div>`}</div>
+                        <div class="snapshot-meta small mt-2"><span class="text-break"><i class="ti ti-camera me-1"></i>${esc(snapshot.snapshot)}</span><span><i class="ti ti-database me-1"></i>${snapshot.indices?.length || 0} indices</span><span><i class="ti ti-file-database me-1"></i>${esc(size ? bytes(size) : "size unavailable")}</span></div>
+                    </div>
+                    <div class="col-auto"><div class="btn-list"><button class="btn btn-primary restore-button" data-index="${index}"><i class="ti ti-history-toggle me-1"></i>Restore</button>${snapshot.can_delete ? `<button class="btn btn-outline-danger delete-button" data-index="${index}" title="Delete manual snapshot"><i class="ti ti-trash"></i></button>` : `<button class="btn btn-outline-secondary" disabled title="Automatic and external snapshots are managed automatically"><i class="ti ti-lock"></i></button>`}</div></div>
+                </div></div></div>
+            </div>`;
         }).join("");
         document.querySelectorAll(".restore-button").forEach(button => button.onclick = () => openRestore(Number(button.dataset.index)));
         document.querySelectorAll(".delete-button").forEach(button => button.onclick = () => removeSnapshot(Number(button.dataset.index)));
