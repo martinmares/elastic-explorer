@@ -8,13 +8,13 @@
         <h3 class="mb-2">{{ d.index_name }}</h3>
         <div class="d-flex gap-2 align-items-center">
             {% if d.health == "green" %}
-            <span class="badge bg-success">{{ d.health }}</span>
+            <span class="badge bg-success text-white">{{ d.health }}</span>
             {% else if d.health == "yellow" %}
-            <span class="badge bg-warning">{{ d.health }}</span>
+            <span class="badge bg-warning text-dark">{{ d.health }}</span>
             {% else if d.health == "red" %}
-            <span class="badge bg-danger">{{ d.health }}</span>
+            <span class="badge bg-danger text-white">{{ d.health }}</span>
             {% else %}
-            <span class="badge bg-secondary">{{ d.health }}</span>
+            <span class="badge bg-secondary text-white">{{ d.health }}</span>
             {% endif %}
             <span class="badge bg-blue-lt">{{ d.status }}</span>
             <span class="text-muted">UUID: {{ d.uuid }}</span>
@@ -64,13 +64,13 @@
                                     <td class="text-muted">Health:</td>
                                     <td>
                                         {% if d.health == "green" %}
-                                        <span class="badge bg-success">{{ d.health }}</span>
+                                        <span class="badge bg-success text-white">{{ d.health }}</span>
                                         {% else if d.health == "yellow" %}
-                                        <span class="badge bg-warning">{{ d.health }}</span>
+                                        <span class="badge bg-warning text-dark">{{ d.health }}</span>
                                         {% else if d.health == "red" %}
-                                        <span class="badge bg-danger">{{ d.health }}</span>
+                                        <span class="badge bg-danger text-white">{{ d.health }}</span>
                                         {% else %}
-                                        <span class="badge bg-secondary">{{ d.health }}</span>
+                                        <span class="badge bg-secondary text-white">{{ d.health }}</span>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -177,24 +177,115 @@
         <div class="tab-pane" id="tab-mappings" role="tabpanel">
             <div class="p-4">
                 {% if d.mappings.is_some() %}
-                <div class="d-flex justify-content-end gap-2 mb-3">
-                    <button
-                        type="button"
-                        class="btn btn-sm btn-outline-secondary index-detail-copy-btn"
-                        data-copy-target="index-detail-mappings-code">
-                        <i class="ti ti-copy me-1"></i>
-                        Copy
-                    </button>
-                    <button
-                        type="button"
-                        class="btn btn-sm btn-outline-secondary index-detail-download-btn"
-                        data-download-target="index-detail-mappings-code"
-                        data-download-name="{{ d.index_name }}-mappings.json">
-                        <i class="ti ti-download me-1"></i>
-                        Download
-                    </button>
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Mapping view">
+                        <button type="button" class="btn btn-primary index-mapping-view-btn" data-view="fields">
+                            <i class="ti ti-list-details me-1"></i>Fields
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary index-mapping-view-btn" data-view="raw">
+                            <i class="ti ti-code me-1"></i>Raw JSON
+                        </button>
+                    </div>
+                    <span class="text-muted small">{{ d.mapping_fields.len() }} mapped fields</span>
                 </div>
-                <pre class="bg-dark text-white p-3 rounded"><code id="index-detail-mappings-code">{{ d.mappings.as_ref().unwrap() }}</code></pre>
+
+                <div id="index-mapping-fields-view">
+                    <div class="row g-2 mb-3">
+                        <div class="col-lg">
+                            <input type="search" class="form-control" id="index-mapping-filter" placeholder="Filter field path…" autocomplete="off">
+                        </div>
+                        <div class="col-lg-3">
+                            <select class="form-select" id="index-mapping-type-filter">
+                                <option value="">All data types</option>
+                                {% for mapping_type in d.mapping_types.iter() %}
+                                <option value="{{ mapping_type }}">{{ mapping_type }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-lg-3">
+                            <select class="form-select" id="index-mapping-sort">
+                                <option value="path-asc">Field A–Z</option>
+                                <option value="path-desc">Field Z–A</option>
+                                <option value="type-asc">Type A–Z</option>
+                                <option value="type-desc">Type Z–A</option>
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <select class="form-select" id="index-mapping-page-size" aria-label="Fields per page">
+                                <option value="50">50</option>
+                                <option value="100" selected>100</option>
+                                <option value="250">250</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small" id="index-mapping-summary"></span>
+                        <div class="btn-group btn-group-sm" aria-label="Mapping pagination">
+                            <button type="button" class="btn btn-outline-secondary" id="index-mapping-prev" title="Previous page"><i class="ti ti-chevron-left"></i></button>
+                            <span class="btn btn-outline-secondary disabled" id="index-mapping-page"></span>
+                            <button type="button" class="btn btn-outline-secondary" id="index-mapping-next" title="Next page"><i class="ti ti-chevron-right"></i></button>
+                        </div>
+                    </div>
+                    <div class="table-responsive index-mapping-table-wrap">
+                        <table class="table table-sm table-vcenter table-hover mb-0" id="index-mapping-fields-table">
+                            <thead>
+                                <tr>
+                                    <th>Field</th>
+                                    <th>Type</th>
+                                    <th>Format</th>
+                                    <th>Analyzer</th>
+                                    <th>Search / aggregate</th>
+                                    <th>Structure</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for field in d.mapping_fields.iter() %}
+                                <tr data-field-path="{{ field.path }}" data-field-type="{{ field.field_type }}">
+                                    <td><code>{{ field.path }}</code></td>
+                                    <td><span class="badge bg-{{ field.type_badge_color() }}-lt">{{ field.field_type }}</span></td>
+                                    <td>{% if field.format.is_some() %}<code>{{ field.format.as_ref().unwrap() }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                                    <td>{% if field.analyzer.is_some() %}<code>{{ field.analyzer.as_ref().unwrap() }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                                    <td>
+                                        {% if field.searchable %}<span class="badge bg-green-lt">search</span>{% endif %}
+                                        {% if field.aggregatable %}<span class="badge bg-azure-lt">aggregate</span>{% endif %}
+                                        {% if !field.searchable && !field.aggregatable %}<span class="text-muted">—</span>{% endif %}
+                                    </td>
+                                    <td>
+                                        {% if field.runtime %}<span class="badge bg-yellow-lt">runtime</span>{% endif %}
+                                        {% if field.multi_field %}<span class="badge bg-cyan-lt">multi-field</span>{% endif %}
+                                        {% if !field.runtime && !field.multi_field %}<span class="text-muted">—</span>{% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="empty d-none" id="index-mapping-empty">
+                        <p class="empty-title">No fields match the filters</p>
+                        <p class="empty-subtitle text-muted">Try changing the field name or data type.</p>
+                    </div>
+                </div>
+
+                <div id="index-mapping-raw-view" class="d-none">
+                    <div class="d-flex justify-content-end gap-2 mb-3">
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-outline-secondary index-detail-copy-btn"
+                            data-copy-target="index-detail-mappings-code">
+                            <i class="ti ti-copy me-1"></i>
+                            Copy
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-outline-secondary index-detail-download-btn"
+                            data-download-target="index-detail-mappings-code"
+                            data-download-name="{{ d.index_name }}-mappings.json">
+                            <i class="ti ti-download me-1"></i>
+                            Download
+                        </button>
+                    </div>
+                    <pre class="bg-dark text-white p-3 rounded"><code id="index-detail-mappings-code">{{ d.mappings.as_ref().unwrap() }}</code></pre>
+                </div>
                 {% else %}
                 <div class="alert alert-warning">
                     <i class="ti ti-alert-triangle me-1"></i>

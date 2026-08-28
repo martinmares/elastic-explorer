@@ -82,6 +82,14 @@ pub struct IndicesSummaryTemplate {
 }
 
 #[derive(Template)]
+#[template(path = "mappings.html")]
+pub struct MappingsTemplate {
+    pub ctx: PageContext,
+    pub default_pattern: String,
+    pub default_hide_internal: bool,
+}
+
+#[derive(Template)]
 #[template(path = "index_detail.html")]
 pub struct IndexDetailTemplate {
     pub data: Option<crate::models::IndexDetail>,

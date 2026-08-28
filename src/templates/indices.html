@@ -99,6 +99,10 @@
                             <span class="form-check-label">Hide internal indices</span>
                         </label>
                         <a href="#" id="indices-summary-btn" class="d-block mt-1 small text-primary">Search summary</a>
+                        <a href="{% if ctx.base_path == "/" %}/mappings{% else %}{{ ctx.base_path }}/mappings{% endif %}"
+                           id="indices-mappings-btn"
+                           data-base-path="{{ ctx.base_path }}"
+                           class="d-block mt-1 small text-primary">Analyze mappings</a>
                     </div>
                 </div>
             </div>
@@ -353,6 +357,34 @@
     }
     #new-mapping-settings-json {
         min-height: 220px;
+    }
+    .indices-actions-column {
+        width: 1%;
+        min-width: 9.5rem;
+        white-space: nowrap;
+    }
+    .indices-actions {
+        flex-wrap: nowrap;
+    }
+    .index-mapping-table-wrap {
+        max-height: 60vh;
+    }
+    #index-mapping-fields-table {
+        min-width: 60rem;
+    }
+    #index-mapping-fields-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--tblr-bg-surface);
+    }
+    #index-mapping-fields-table th:first-child,
+    #index-mapping-fields-table td:first-child {
+        width: 38%;
+    }
+    #index-mapping-fields-table td:first-child code {
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
 </style>
 <script>
@@ -691,6 +723,7 @@ function openIndexDetail(indexName) {
     }).then(() => {
         console.log('Content loaded, showing modal');
         initIndexDetailCharts();
+        initIndexDetailMappings();
         // Show modal with explicit backdrop configuration
         const modalElement = document.getElementById('index-detail-modal');
         if (modalElement) {
@@ -706,6 +739,97 @@ function openIndexDetail(indexName) {
     }).catch(err => {
         console.error('Failed to load index detail:', err);
     });
+}
+
+function initIndexDetailMappings() {
+    const table = document.getElementById('index-mapping-fields-table');
+    if (!table) return;
+
+    const rows = Array.from(table.tBodies[0].rows);
+    const filterInput = document.getElementById('index-mapping-filter');
+    const typeFilter = document.getElementById('index-mapping-type-filter');
+    const sortSelect = document.getElementById('index-mapping-sort');
+    const pageSizeSelect = document.getElementById('index-mapping-page-size');
+    const summary = document.getElementById('index-mapping-summary');
+    const pageLabel = document.getElementById('index-mapping-page');
+    const previousButton = document.getElementById('index-mapping-prev');
+    const nextButton = document.getElementById('index-mapping-next');
+    const emptyState = document.getElementById('index-mapping-empty');
+    let currentPage = 1;
+
+    const compareRows = (left, right) => {
+        const [key, direction] = sortSelect.value.split('-');
+        const datasetKey = key === 'type' ? 'fieldType' : 'fieldPath';
+        const result = left.dataset[datasetKey].localeCompare(
+            right.dataset[datasetKey],
+            undefined,
+            { numeric: true, sensitivity: 'base' }
+        );
+        return direction === 'desc' ? -result : result;
+    };
+
+    const render = () => {
+        const query = filterInput.value.trim().toLowerCase();
+        const selectedType = typeFilter.value;
+        const pageSize = Number(pageSizeSelect.value);
+        const matchingRows = rows
+            .filter(row => {
+                const matchesPath = !query || row.dataset.fieldPath.toLowerCase().includes(query);
+                const matchesType = !selectedType || row.dataset.fieldType === selectedType;
+                return matchesPath && matchesType;
+            })
+            .sort(compareRows);
+        const totalPages = Math.max(1, Math.ceil(matchingRows.length / pageSize));
+        currentPage = Math.min(currentPage, totalPages);
+        const start = (currentPage - 1) * pageSize;
+        const visibleRows = new Set(matchingRows.slice(start, start + pageSize));
+
+        rows.forEach(row => {
+            row.classList.toggle('d-none', !visibleRows.has(row));
+        });
+        matchingRows.forEach(row => table.tBodies[0].appendChild(row));
+
+        const visibleFrom = matchingRows.length ? start + 1 : 0;
+        const visibleTo = Math.min(start + pageSize, matchingRows.length);
+        summary.textContent = `Showing ${visibleFrom}–${visibleTo} of ${matchingRows.length} fields`;
+        pageLabel.textContent = `${currentPage} / ${totalPages}`;
+        previousButton.disabled = currentPage <= 1;
+        nextButton.disabled = currentPage >= totalPages;
+        table.classList.toggle('d-none', matchingRows.length === 0);
+        emptyState.classList.toggle('d-none', matchingRows.length !== 0);
+    };
+
+    [filterInput, typeFilter, sortSelect, pageSizeSelect].forEach(control => {
+        control.addEventListener(control === filterInput ? 'input' : 'change', () => {
+            currentPage = 1;
+            render();
+        });
+    });
+    previousButton.addEventListener('click', () => {
+        if (currentPage > 1) {
+            currentPage -= 1;
+            render();
+        }
+    });
+    nextButton.addEventListener('click', () => {
+        currentPage += 1;
+        render();
+    });
+
+    document.querySelectorAll('.index-mapping-view-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const showRaw = button.dataset.view === 'raw';
+            document.getElementById('index-mapping-fields-view').classList.toggle('d-none', showRaw);
+            document.getElementById('index-mapping-raw-view').classList.toggle('d-none', !showRaw);
+            document.querySelectorAll('.index-mapping-view-btn').forEach(viewButton => {
+                const active = viewButton === button;
+                viewButton.classList.toggle('btn-primary', active);
+                viewButton.classList.toggle('btn-outline-secondary', !active);
+            });
+        });
+    });
+
+    render();
 }
 
 let currentNewMappingSource = null;
@@ -1287,6 +1411,16 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (err) {
                 console.error('Failed to copy summary names:', err);
             }
+        });
+    }
+
+    const mappingsBtn = document.getElementById('indices-mappings-btn');
+    if (mappingsBtn) {
+        mappingsBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            const filter = document.getElementById('filter-input')?.value.trim() || '*';
+            const basePath = mappingsBtn.dataset.basePath === '/' ? '' : mappingsBtn.dataset.basePath;
+            window.location.href = `${basePath}/mappings?pattern=${encodeURIComponent(filter)}`;
         });
     }
 });

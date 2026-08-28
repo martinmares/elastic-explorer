@@ -158,6 +158,14 @@
                                     <span class="nav-link-title">Indices</span>
                                 </a>
                             </li>
+                            <li class="nav-item {% block nav_mappings %}{% endblock %}">
+                                <a class="nav-link" href="{% if ctx.base_path == "/" %}/mappings{% else %}{{ ctx.base_path }}/mappings{% endif %}">
+                                    <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                        <i class="ti ti-schema"></i>
+                                    </span>
+                                    <span class="nav-link-title">Mappings</span>
+                                </a>
+                            </li>
                             <li class="nav-item {% block nav_shards %}{% endblock %}">
                                 <a class="nav-link" href="/shards">
                                     <span class="nav-link-icon d-md-none d-lg-inline-block">

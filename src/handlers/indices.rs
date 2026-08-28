@@ -7,17 +7,21 @@ use axum::{
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::Arc,
+};
 
 use crate::auth::{ProxyIdentity, Role};
 use crate::es::EsClient;
 use crate::handlers::endpoints::{
     AppState, default_index_pattern, get_active_endpoint, get_endpoint_password,
 };
-use crate::models::{AliasInfo, IndexAlias, IndexDetail, IndexInfo, IndicesListData};
+use crate::models::{
+    AliasInfo, IndexAlias, IndexDetail, IndexInfo, IndexMappingField, IndicesListData,
+};
 use crate::templates::{IndexDetailTemplate, IndicesTableTemplate, IndicesTemplate, PageContext};
 use crate::utils::{format_bytes, format_number, parse_size_to_bytes};
-use std::collections::HashMap;
 
 fn alias_operation_error_message(response: &serde_json::Value) -> Option<String> {
     if response.get("errors").and_then(|v| v.as_bool()) == Some(true) {
@@ -1420,6 +1424,30 @@ async fn load_index_detail(
     let mappings_path = format!("/{}/_mapping", index_name);
     let mappings_response: serde_json::Value = client.get(&mappings_path).await?;
     let mappings = serde_json::to_string_pretty(&mappings_response).ok();
+    let mapping_root = mappings_response
+        .get(index_name)
+        .and_then(|index| index.get("mappings"))
+        .unwrap_or(&serde_json::Value::Null);
+    let mapping_fields: Vec<_> =
+        crate::handlers::mappings::mapping_fields_for_index(index_name, mapping_root)
+            .into_iter()
+            .map(|field| IndexMappingField {
+                path: field.path,
+                field_type: field.field_type,
+                format: field.format,
+                analyzer: field.analyzer,
+                searchable: field.searchable,
+                aggregatable: field.aggregatable,
+                runtime: field.runtime,
+                multi_field: field.multi_field,
+            })
+            .collect();
+    let mapping_types = mapping_fields
+        .iter()
+        .map(|field| field.field_type.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
 
     // 5. Načti stats
     let stats_path = format!("/{}/_stats", index_name);
@@ -1499,6 +1527,8 @@ async fn load_index_detail(
         aliases: alias_names,
         settings,
         mappings,
+        mapping_fields,
+        mapping_types,
         stats,
         stats_docs_count,
         stats_docs_deleted,

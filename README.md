@@ -6,6 +6,7 @@ A modern Elasticsearch cluster explorer written in Rust - a simpler and more int
 
 - 🔍 **Dashboard** - Cluster health, metrics, and node overview
 - 📊 **Indices** - List, filter (with regex), bulk operations, and detailed information
+- 🧭 **Mapping Explorer** - Cross-index field catalog, type conflicts, relations, matrix comparison, and conservative orphan-index candidates
 - 🔎 **Search** - Query DSL and SQL support with saved queries
 - 🖥️ **Dev Console** - Interactive API explorer (like Kibana's Dev Tools)
 - 🔧 **Shards** - Visual shard distribution and status
@@ -124,6 +125,26 @@ Run the isolated Elasticsearch 8.19.17 integration test with:
 ```
 
 Set `KEEP_SNAPSHOT_SMOKE=1` to leave the Compose cluster running on port 19200.
+
+## Mapping Explorer
+
+The read-only `Mappings` page analyzes an Elasticsearch index expression such
+as `tsm-sda*`. It flattens mappings into a filterable field catalog, compares
+field types and material mapping options between indices, shows nested and join
+relations, and provides an index-by-field matrix.
+
+Internal, hidden, and dot-prefixed indices are excluded by default and can be
+included explicitly from the page. Analysis results are cached in memory for
+five minutes per endpoint, pattern, and visibility mode; **Refresh analysis**
+bypasses the cache. Large field, relation, matrix, and conflict results are
+shown in bounded, paginated views.
+
+`Cleanup candidates` identifies potential reindex leftovers using explainable
+signals: missing aliases, name similarity to a known alias family, mapping
+identity, creation order, document counts, and store sizes. These results are
+review candidates only. The application deliberately performs no automatic
+close or delete action, and excludes hidden, data-stream, and ILM-managed
+indices when that metadata is available.
 
 ## Trusted proxy authentication
 

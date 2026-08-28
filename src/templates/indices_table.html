@@ -100,7 +100,7 @@
                     </th>
                     <th>Shards (P/R)</th>
                     <th>Created</th>
-                    <th>Actions</th>
+                    <th class="indices-actions-column">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -169,8 +169,8 @@
                     <td>
                         <span class="index-created" data-created="{{ index.creation_date.as_deref().unwrap_or("") }}"></span>
                     </td>
-                    <td>
-                        <div class="btn-list">
+                    <td class="indices-actions-column">
+                        <div class="btn-list indices-actions">
                             <button class="btn btn-icon btn-ghost-primary"
                                     onclick="openIndexDetail('{{ index.index }}')"
                                     title="Index detail">

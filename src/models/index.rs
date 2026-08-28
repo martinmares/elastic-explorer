@@ -123,6 +123,36 @@ impl IndicesListData {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct IndexMappingField {
+    pub path: String,
+    pub field_type: String,
+    pub format: Option<String>,
+    pub analyzer: Option<String>,
+    pub searchable: bool,
+    pub aggregatable: bool,
+    pub runtime: bool,
+    pub multi_field: bool,
+}
+
+impl IndexMappingField {
+    pub fn type_badge_color(&self) -> &'static str {
+        match self.field_type.as_str() {
+            "keyword" | "constant_keyword" | "wildcard" => "blue",
+            "text" | "match_only_text" => "indigo",
+            "date" | "date_nanos" => "purple",
+            "boolean" => "green",
+            "byte" | "short" | "integer" | "long" | "unsigned_long" | "half_float" | "float"
+            | "double" | "scaled_float" => "lime",
+            "object" | "flattened" => "cyan",
+            "nested" => "pink",
+            "geo_point" | "geo_shape" => "teal",
+            "join" => "orange",
+            _ => "secondary",
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct IndexDetail {
     pub index_name: String,
     pub health: String,
@@ -137,7 +167,9 @@ pub struct IndexDetail {
     pub aliases: Vec<String>,
     pub settings: Option<String>, // JSON formatted
     pub mappings: Option<String>, // JSON formatted
-    pub stats: Option<String>,    // JSON formatted
+    pub mapping_fields: Vec<IndexMappingField>,
+    pub mapping_types: Vec<String>,
+    pub stats: Option<String>, // JSON formatted
     pub stats_docs_count: Option<u64>,
     pub stats_docs_deleted: Option<u64>,
     pub stats_store_size_bytes: Option<u64>,

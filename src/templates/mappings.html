@@ -1,0 +1,1259 @@
+{% extends "base.html" %}
+{% block title %}Mappings - Elastic Explorer{% endblock %}
+{% block nav_mappings %}active{% endblock %}
+{% block page_title %}Mapping Explorer{% endblock %}
+{% block page_subtitle %}<div
+  class="page-pretitle">Field catalog, compatibility and index hygiene</div>{% endblock %}
+
+{% block content %}
+<div id="mapping-explorer" data-base-path="{{ ctx.base_path }}">
+  <div class="card mb-3">
+    <div class="card-body">
+      <form id="mapping-scope-form" class="row g-3 align-items-end">
+        <div
+          class="col"><label class="form-label" for="mapping-pattern">Index pattern</label>
+        <input id="mapping-pattern" class="form-control font-monospace" value="{{ default_pattern }}" placeholder="tsm-sda*" autocomplete="off" required>
+        <div class="form-hint">Use an Elasticsearch wildcard or a comma-separated index expression. Analysis is read-only.</div>
+      </div>
+        <div class="col-auto pb-2"><label class="form-check form-switch mb-0">
+        <input id="mapping-hide-internal" class="form-check-input" type="checkbox" {% if default_hide_internal %}checked{% endif %}>
+        <span class="form-check-label">Hide internal indices</span>
+      </label></div>
+        <div
+          class="col-auto"><button class="btn btn-primary" type="submit"><i class="ti ti-refresh me-1"></i>Refresh analysis</button></div>
+      </form>
+      <div id="mapping-cache-status" class="text-muted small mt-2"></div>
+    </div>
+  </div>
+
+  <div id="mapping-error" class="alert alert-danger d-none"></div>
+  <div id="mapping-warnings"></div>
+  <div id="mapping-loading" class="card">
+    <div class="card-body text-center py-5">
+      <div class="spinner-border text-primary" role="status"></div>
+      <p
+        class="text-muted mt-3 mb-0">Analyzing mappings and cleanup candidates…</p>
+    </div>
+  </div>
+
+  <div id="mapping-results" class="d-none">
+    <div class="row row-cards mb-3" id="mapping-kpis"></div>
+    <div class="card">
+      <div class="card-header">
+        <ul class="nav nav-tabs card-header-tabs" data-bs-toggle="tabs"
+          role="tablist">
+          <li
+            class="nav-item"><a href="#mapping-overview" class="nav-link active" data-bs-toggle="tab"><i class="ti ti-chart-pie me-1"></i>Overview</a></li>
+          <li
+            class="nav-item"><a href="#mapping-fields" class="nav-link" data-bs-toggle="tab"><i class="ti ti-list-details me-1"></i>Fields</a></li>
+          <li
+            class="nav-item"><a href="#mapping-matrix" class="nav-link" data-bs-toggle="tab"><i class="ti ti-table me-1"></i>Index matrix</a></li>
+          <li
+            class="nav-item"><a href="#mapping-relations" class="nav-link" data-bs-toggle="tab"><i class="ti ti-hierarchy-2 me-1"></i>Relations</a></li>
+          <li
+            class="nav-item"><a href="#mapping-conflicts" class="nav-link" data-bs-toggle="tab"><i class="ti ti-alert-triangle me-1"></i>Conflicts <span id="conflict-tab-count" class="badge bg-red-lt ms-1"></span></a></li>
+          <li
+            class="nav-item"><a href="#mapping-families" class="nav-link" data-bs-toggle="tab"><i class="ti ti-affiliate me-1"></i>Cleanup candidates <span id="orphan-tab-count" class="badge bg-yellow-lt ms-1"></span></a></li>
+        </ul>
+      </div>
+      <div class="card-body">
+        <div class="tab-content">
+          <div class="tab-pane active show" id="mapping-overview">
+            <div id="mapping-overview-content"></div>
+          </div>
+          <div class="tab-pane" id="mapping-fields">
+            <div class="row g-2 mb-3">
+              <div
+                class="col-md-3"><input id="field-filter" class="form-control" placeholder="Filter field path…"></div>
+              <div
+                class="col-md-2"><select id="field-category" class="form-select"><option value="">All categories</option></select></div>
+              <div
+                class="col-md-2"><select id="field-type" class="form-select"><option value="">All types</option></select></div>
+              <div
+                class="col-md-2"><select id="field-capability" class="form-select"><option value="">All capabilities</option><option value="searchable">Searchable</option><option value="aggregatable">Aggregatable</option><option value="runtime">Runtime</option><option value="multi_field">Multi-field</option></select></div>
+              <div
+                class="col-md-2 d-flex align-items-center"><label class="form-check mb-0"><input id="field-conflicts-only" class="form-check-input" type="checkbox"><span class="form-check-label">Issues only</span></label></div>
+              <div
+                class="col-md-1"><select id="field-page-size" class="form-select" aria-label="Fields per page"><option>25</option><option selected>50</option><option>100</option><option>250</option></select></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div id="fields-summary" class="text-muted small"></div>
+              <div id="fields-pagination"></div>
+            </div>
+            <div id="fields-table" class="mapping-fields-list"></div>
+            <div class="d-flex justify-content-end mt-2"
+              id="fields-pagination-bottom"></div>
+          </div>
+          <div class="tab-pane" id="mapping-matrix">
+            <div class="alert alert-info">
+            <h4 class="alert-title"><i class="ti ti-info-circle me-1"></i>How to read this report</h4>
+            A conflict means that the same field has incompatible definitions across the selected indices. A missing field is not a conflict. The most common definition is used only as a reference, not as a claim that it is correct.
+          </div>
+            <div class="row g-2 mb-4 align-items-center">
+              <div
+                class="col-md-6"><input id="matrix-filter" class="form-control" placeholder="Filter conflicting field…"></div>
+              <div class="col-md-6 text-md-end text-muted small"
+                id="matrix-summary"></div>
+            </div>
+            <div id="matrix-human-report"></div>
+            <details class="mt-4" id="matrix-technical-details">
+              <summary
+                class="h3 mb-3"><i class="ti ti-table me-1"></i>Detailed index-by-index matrix</summary>
+              <div class="alert alert-secondary py-2">
+                <span class="badge bg-red-lt me-1">Different type</span>
+                <span class="badge bg-yellow-lt me-1">Different options</span>
+                <span class="badge bg-blue-lt me-1">Reference definition</span>
+                <span
+                  class="text-muted">— field is not mapped in this index</span>
+              </div>
+              <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+                <div id="matrix-field-pagination"></div>
+                <div id="matrix-index-pagination"></div>
+              </div>
+              <div class="table-responsive mapping-matrix-wrap">
+                <table class="table table-sm table-bordered">
+                  <thead id="matrix-head"></thead>
+                  <tbody id="matrix-body"></tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+          <div class="tab-pane" id="mapping-relations">
+            <div id="relations-content"></div>
+          </div>
+          <div class="tab-pane" id="mapping-conflicts">
+            <div class="row g-2 mb-3">
+              <div
+                class="col"><input id="conflict-filter" class="form-control" placeholder="Filter conflicting field…"></div>
+              <div
+                class="col-auto"><select id="conflict-page-size" class="form-select"><option>10</option><option selected>20</option><option>50</option><option>100</option></select></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div id="conflicts-summary" class="text-muted small"></div>
+              <div id="conflicts-pagination"></div>
+            </div>
+            <div id="conflicts-content"></div>
+          </div>
+          <div class="tab-pane" id="mapping-families">
+            <div id="families-content"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.mapping-kpi-value {
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.mapping-field-path {
+  min-width: 18rem;
+}
+.mapping-matrix-wrap {
+  max-height: 65vh;
+}
+.mapping-matrix-wrap th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--tblr-bg-surface);
+  min-width: 8rem;
+}
+.mapping-matrix-wrap th:first-child,
+.mapping-matrix-wrap td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--tblr-bg-surface);
+  min-width: 16rem;
+}
+.mapping-matrix-wrap td {
+  white-space: nowrap;
+}
+.mapping-orphan-high {
+  border-left: 3px solid var(--tblr-danger);
+}
+.mapping-orphan-medium {
+  border-left: 3px solid var(--tblr-warning);
+}
+.mapping-orphan-low {
+  border-left: 3px solid var(--tblr-secondary);
+}
+.mapping-index-list {
+  max-height: 9rem;
+  overflow: auto;
+}
+.mapping-conflict-summary {
+  display: grid;
+  grid-template-columns: minmax(16rem,1.25fr) minmax(20rem,2fr) auto;
+  gap: 1.5rem;
+  align-items: start;
+}
+.mapping-conflict-coverage {
+  text-align: right;
+  white-space: nowrap;
+}
+.mapping-conflict-details {
+  padding-top: .75rem;
+  border-top: 1px solid var(--tblr-border-color);
+}
+.mapping-conflict-details > summary {
+  width: max-content;
+  cursor: pointer;
+}
+.mapping-conflict-variants {
+  margin-top: 1rem;
+}
+.mapping-conflict-variant {
+  padding: .25rem 0;
+}
+.mapping-conflict-variant + .mapping-conflict-variant {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--tblr-border-color);
+}
+.mapping-conflict-variant .mapping-index-list {
+  max-height: 12rem;
+}
+@media (max-width:991.98px) {
+  .mapping-conflict-summary {
+    grid-template-columns: 1fr;
+    gap: .75rem;
+  }
+  .mapping-conflict-coverage {
+    text-align: left;
+  }
+}
+.mapping-signature {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mapping-comparison-table td {
+  vertical-align: top;
+}
+.mapping-definition {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin-bottom: .35rem;
+}
+.mapping-definition:last-child {
+  margin-bottom: 0;
+}
+#matrix-technical-details > summary {
+  cursor: pointer;
+}
+#matrix-technical-details > summary::marker {
+  color: var(--tblr-primary);
+}
+.mapping-fields-list {
+  display: grid;
+  gap: .75rem;
+}
+.mapping-field-item {
+  overflow: hidden;
+  border: 1px solid var(--tblr-border-color);
+  border-radius: var(--tblr-border-radius);
+  background: var(--tblr-bg-surface);
+}
+.mapping-field-item.mapping-field-warning {
+  border-color: color-mix(in srgb,var(--tblr-warning)
+    55%,var(--tblr-border-color));
+  background: color-mix(in srgb,var(--tblr-warning) 8%,var(--tblr-bg-surface));
+}
+.mapping-field-item.mapping-field-conflict {
+  border-color: color-mix(in srgb,var(--tblr-danger)
+    55%,var(--tblr-border-color));
+  background: color-mix(in srgb,var(--tblr-danger) 8%,var(--tblr-bg-surface));
+}
+.mapping-field-summary {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(18rem,3fr) minmax(7rem,1fr) minmax(8rem,1fr)
+    minmax(7rem,.8fr) minmax(10rem,1.2fr) minmax(7rem,.8fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem 1rem 1rem 2.25rem;
+  cursor: pointer;
+  list-style: none;
+}
+.mapping-field-summary::-webkit-details-marker {
+  display: none;
+}
+.mapping-field-summary::before {
+  position: absolute;
+  left: .85rem;
+  content: '\25b8';
+  color: var(--tblr-secondary);
+}
+.mapping-field-item[open] > .mapping-field-summary::before {
+  content: '\25be';
+}
+.mapping-field-summary-label {
+  display: block;
+  margin-bottom: .25rem;
+  color: var(--tblr-secondary);
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.mapping-field-summary-name code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.mapping-field-expanded {
+  padding: 0 1rem 1rem;
+  border-top: 1px solid color-mix(in srgb,var(--tblr-border-color)
+    70%,transparent);
+}
+.mapping-field-details-table {
+  margin-top: .75rem;
+}
+.mapping-field-details-table th:first-child,
+.mapping-field-details-table td:first-child {
+  width: 38%;
+}
+.mapping-field-details-table td:first-child code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.mapping-field-details-table .mapping-type-cell {
+  box-shadow: inset 3px 0 var(--mapping-type-accent);
+  background: color-mix(in srgb,var(--mapping-type-accent) 8%,transparent);
+}
+.mapping-type-blue {
+  --mapping-type-accent: var(--tblr-blue);
+}
+.mapping-type-indigo {
+  --mapping-type-accent: var(--tblr-indigo);
+}
+.mapping-type-green {
+  --mapping-type-accent: var(--tblr-green);
+}
+.mapping-type-purple {
+  --mapping-type-accent: var(--tblr-purple);
+}
+.mapping-type-yellow {
+  --mapping-type-accent: var(--tblr-yellow);
+}
+.mapping-type-orange {
+  --mapping-type-accent: var(--tblr-orange);
+}
+.mapping-type-cyan {
+  --mapping-type-accent: var(--tblr-cyan);
+}
+.mapping-type-pink {
+  --mapping-type-accent: var(--tblr-pink);
+}
+.mapping-type-lime {
+  --mapping-type-accent: var(--tblr-lime);
+}
+.mapping-type-teal {
+  --mapping-type-accent: var(--tblr-teal);
+}
+.mapping-type-azure {
+  --mapping-type-accent: var(--tblr-azure);
+}
+.mapping-type-secondary {
+  --mapping-type-accent: var(--tblr-secondary);
+}
+@media (max-width:991.98px) {
+  .mapping-field-summary {
+    grid-template-columns: minmax(14rem,2fr) repeat(2,minmax(7rem,1fr));
+  }
+  .mapping-field-details-table th:first-child,
+  .mapping-field-details-table td:first-child {
+    width: 45%;
+  }
+}
+@media (max-width:575.98px) {
+  .mapping-field-summary {
+    grid-template-columns: 1fr;
+  }
+  .mapping-field-details-table th:first-child,
+  .mapping-field-details-table td:first-child {
+    width: auto;
+  }
+}
+[data-bs-theme="dark"] #mapping-explorer .table-warning {
+  --tblr-table-color: var(--tblr-body-color);
+  --tblr-table-bg: color-mix(in srgb, var(--tblr-warning) 12%, var(--tblr-bg-surface));
+  --tblr-table-border-color: color-mix(in srgb, var(--tblr-warning) 32%, var(--tblr-border-color));
+  --tblr-table-striped-color: var(--tblr-body-color);
+  --tblr-table-striped-bg: color-mix(in srgb, var(--tblr-warning) 14%, var(--tblr-bg-surface));
+  --tblr-table-active-color: var(--tblr-body-color);
+  --tblr-table-active-bg: color-mix(in srgb, var(--tblr-warning) 18%, var(--tblr-bg-surface));
+  --tblr-table-hover-color: var(--tblr-body-color);
+  --tblr-table-hover-bg: color-mix(in srgb, var(--tblr-warning) 16%, var(--tblr-bg-surface));
+}
+[data-bs-theme="dark"] #mapping-explorer .table-warning .table > :not(caption) > * > * {
+  color: var(--tblr-body-color);
+  background-color: transparent;
+}
+[data-bs-theme="dark"] #mapping-explorer .table-danger {
+  --tblr-table-color: var(--tblr-body-color);
+  --tblr-table-bg: color-mix(in srgb, var(--tblr-danger) 12%, var(--tblr-bg-surface));
+  --tblr-table-border-color: color-mix(in srgb, var(--tblr-danger) 32%, var(--tblr-border-color));
+  --tblr-table-hover-color: var(--tblr-body-color);
+  --tblr-table-hover-bg: color-mix(in srgb, var(--tblr-danger) 16%, var(--tblr-bg-surface));
+}
+</style>
+
+<script>
+(() => {
+  "use strict";
+
+  const FIRST_PAGE = 1;
+  const EMPTY_VALUE = "—";
+  const BYTES_PER_UNIT = 1024;
+  const SIZE_UNITS = Object.freeze(["B", "KB", "MB", "GB", "TB"]);
+  const PAGE_SIZE = Object.freeze({
+    overviewIndices: 10,
+    matrixReport: 10,
+    matrixFields: 25,
+    matrixIndices: 10,
+    nestedFields: 25,
+  });
+  const HTML_ENTITIES = Object.freeze({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&#39;",
+    '"': "&quot;",
+  });
+  const TYPE_COLORS = Object.freeze({
+    keyword: "blue",
+    constant_keyword: "blue",
+    wildcard: "blue",
+    text: "indigo",
+    match_only_text: "indigo",
+    byte: "green",
+    short: "green",
+    integer: "green",
+    long: "green",
+    unsigned_long: "green",
+    half_float: "green",
+    float: "green",
+    double: "green",
+    scaled_float: "green",
+    date: "purple",
+    date_nanos: "purple",
+    boolean: "yellow",
+    object: "orange",
+    flattened: "cyan",
+    nested: "pink",
+    join: "lime",
+    geo_point: "teal",
+    geo_shape: "teal",
+    point: "teal",
+    shape: "teal",
+    ip: "teal",
+  });
+  const KPI_DEFINITIONS = Object.freeze([
+    ["Indices", "index_count", "database"],
+    ["Unique fields", "unique_field_count", "list-details"],
+    ["Mapped occurrences", "mapped_field_count", "stack-2"],
+    ["Conflicts", "conflict_count", "alert-triangle"],
+    ["Nested fields", "nested_count", "box-multiple"],
+    ["Join relations", "relation_count", "hierarchy-2"],
+  ]);
+
+  const root = document.getElementById("mapping-explorer");
+  const basePath = root.dataset.basePath === "/" ? "" : root.dataset.basePath;
+  let analysis = null,
+    fieldPage = FIRST_PAGE,
+    matrixFieldPage = FIRST_PAGE,
+    matrixIndexPage = FIRST_PAGE,
+    matrixTypePage = FIRST_PAGE,
+    matrixOptionPage = FIRST_PAGE,
+    conflictPage = FIRST_PAGE,
+    nestedPage = FIRST_PAGE;
+  const byId = (id) => document.getElementById(id);
+  const escapeHtml = (value) =>
+    String(value ?? "").replace(
+      /[&<>'"]/g,
+      (character) => HTML_ENTITIES[character],
+    );
+  const formatNumber = (value) => new Intl.NumberFormat().format(value ?? 0);
+  const formatBytes = (value) => {
+    let size = Number(value || 0), unit = 0;
+    while (size >= BYTES_PER_UNIT && unit < SIZE_UNITS.length - 1) {
+      size /= BYTES_PER_UNIT;
+      unit++;
+    }
+    return `${
+      size.toLocaleString(undefined, { maximumFractionDigits: unit ? 1 : 0 })
+    } ${SIZE_UNITS[unit]}`;
+  };
+  const badge = (text, color = "secondary") =>
+    `<span class="badge bg-${color}-lt me-1">${escapeHtml(text)}</span>`;
+  const typeColor = (type) =>
+    TYPE_COLORS[type] ?? (type.endsWith("_range") ? "azure" : "secondary");
+  const typeBadge = (type) => badge(type, typeColor(type));
+  const range = (page, size, total) => {
+    const pages = Math.max(1, Math.ceil(total / size));
+    page = Math.min(Math.max(1, page), pages);
+    return {
+      page,
+      pages,
+      start: (page - 1) * size,
+      end: Math.min(page * size, total),
+    };
+  };
+  const pager = (id, page, pages, handler) => {
+    const el = byId(id);
+    if (!el) return;
+    el.innerHTML =
+      `<div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" ${
+        page <= FIRST_PAGE ? "disabled" : ""
+      } data-page="${
+        page - 1
+      }"><i class="ti ti-chevron-left"></i></button><button class="btn btn-outline-secondary disabled">${page} / ${pages}</button><button class="btn btn-outline-secondary" ${
+        page >= pages ? "disabled" : ""
+      } data-page="${
+        page + 1
+      }"><i class="ti ti-chevron-right"></i></button></div>`;
+    el.querySelectorAll("[data-page]").forEach((b) =>
+      b.addEventListener("click", () => handler(Number(b.dataset.page)))
+    );
+  };
+
+  function resetPagination() {
+    fieldPage = FIRST_PAGE;
+    matrixFieldPage = FIRST_PAGE;
+    matrixIndexPage = FIRST_PAGE;
+    matrixTypePage = FIRST_PAGE;
+    matrixOptionPage = FIRST_PAGE;
+    conflictPage = FIRST_PAGE;
+    nestedPage = FIRST_PAGE;
+  }
+
+  async function loadAnalysis(pattern, refresh = false) {
+    byId("mapping-loading").classList.remove("d-none");
+    byId("mapping-results").classList.add("d-none");
+    byId("mapping-error").classList.add("d-none");
+    byId("mapping-warnings").innerHTML = "";
+    const hideInternal = byId("mapping-hide-internal").checked;
+    try {
+      const params = new URLSearchParams({
+          pattern,
+          hide_internal: String(hideInternal),
+          refresh: String(refresh),
+        }),
+        response = await fetch(`${basePath}/mappings/analysis?${params}`);
+      if (!response.ok) {
+        throw new Error(await response.text() || `HTTP ${response.status}`);
+      }
+      analysis = await response.json();
+      history.replaceState(
+        null,
+        "",
+        `${basePath}/mappings?pattern=${
+          encodeURIComponent(pattern)
+        }&hide_internal=${hideInternal}`,
+      );
+      resetPagination();
+      renderAll();
+      byId("mapping-results").classList.remove("d-none");
+    } catch (error) {
+      byId("mapping-error").textContent = error.message || String(error);
+      byId("mapping-error").classList.remove("d-none");
+    } finally {
+      byId("mapping-loading").classList.add("d-none");
+    }
+  }
+
+  function renderAll() {
+    renderStatus();
+    renderWarnings();
+    renderKpis();
+    renderOverview();
+    populateFilters();
+    renderFields();
+    renderMatrix();
+    renderRelations();
+    renderConflicts();
+    renderFamilies();
+    byId("conflict-tab-count").textContent = analysis.conflict_count;
+    byId("orphan-tab-count").textContent = analysis.orphan_candidates.length;
+  }
+  function renderStatus() {
+    const generated = new Date(analysis.generated_at).toLocaleString(),
+      excluded = analysis.hide_internal
+        ? " · internal and hidden indices excluded"
+        : "";
+    byId("mapping-cache-status").innerHTML =
+      `<i class="ti ti-clock me-1"></i>Analyzed ${
+        escapeHtml(generated)
+      } · cached for ${
+        Math.round(analysis.cache_ttl_seconds / 60)
+      } min${excluded}`;
+  }
+  function renderWarnings() {
+    byId("mapping-warnings").innerHTML = (analysis.warnings || []).map((w) =>
+      `<div class="alert alert-warning"><i class="ti ti-alert-triangle me-1"></i>${
+        escapeHtml(w)
+      }</div>`
+    ).join("");
+  }
+  function renderKpis() {
+    byId("mapping-kpis").innerHTML = KPI_DEFINITIONS.map(
+      ([label, property, icon]) =>
+        `<div class="col-sm-6 col-lg-2"><div class="card h-100"><div class="card-body"><div class="d-flex align-items-center"><div class="subheader">${
+          escapeHtml(label)
+        }</div><i class="ti ti-${icon} ms-auto text-muted"></i></div><div class="mapping-kpi-value mt-2">${
+          formatNumber(analysis[property])
+        }</div></div></div></div>`,
+    ).join("");
+  }
+  function renderOverview() {
+    const types = analysis.type_counts.map((i) =>
+        `<tr><td>${escapeHtml(i.category)}</td><td class="text-end"><strong>${
+          formatNumber(i.count)
+        }</strong></td><td style="width:45%"><div class="progress progress-sm"><div class="progress-bar" style="width:${
+          analysis.unique_field_count
+            ? i.count * 100 / analysis.unique_field_count
+            : 0
+        }%"></div></div></td></tr>`
+      ).join(""),
+      largest = [...analysis.indices].sort((a, b) =>
+        b.field_count - a.field_count
+      ).slice(0, PAGE_SIZE.overviewIndices).map((i) =>
+        `<tr><td><code>${escapeHtml(i.name)}</code></td><td class="text-end">${
+          formatNumber(i.field_count)
+        }</td><td class="text-end text-muted">${
+          formatBytes(i.store_size_bytes)
+        }</td></tr>`
+      ).join("");
+    byId("mapping-overview-content").innerHTML =
+      `<div class="row g-4"><div class="col-lg-6"><h3>Field categories</h3><table class="table table-sm table-vcenter"><tbody>${
+        types || '<tr><td class="text-muted">No fields found</td></tr>'
+      }</tbody></table></div><div class="col-lg-6"><h3>Largest mappings</h3><table class="table table-sm table-vcenter"><thead><tr><th>Index</th><th class="text-end">Fields</th><th class="text-end">Store</th></tr></thead><tbody>${
+        largest || '<tr><td class="text-muted">No indices found</td></tr>'
+      }</tbody></table></div></div>`;
+  }
+  function sortedUnique(values) {
+    return [...new Set(values)].sort();
+  }
+
+  function populateSelect(id, placeholder, values) {
+    const select = byId(id);
+    const selectedValue = select.value;
+    const options = values.map((value) =>
+      `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`
+    ).join("");
+
+    select.innerHTML = `<option value="">${placeholder}</option>${options}`;
+    select.value = selectedValue;
+  }
+
+  function populateFilters() {
+    populateSelect(
+      "field-category",
+      "All categories",
+      sortedUnique(analysis.fields.map((field) => field.category)),
+    );
+    populateSelect(
+      "field-type",
+      "All types",
+      sortedUnique(analysis.fields.flatMap((field) => field.types)),
+    );
+  }
+
+  function currentFieldFilters() {
+    return {
+      query: byId("field-filter").value.trim().toLowerCase(),
+      category: byId("field-category").value,
+      type: byId("field-type").value,
+      capability: byId("field-capability").value,
+      issuesOnly: byId("field-conflicts-only").checked,
+    };
+  }
+
+  function fieldMatchesFilters(field, filters) {
+    const matchesQuery = !filters.query ||
+      field.path.toLowerCase().includes(filters.query) ||
+      field.types.some((type) => type.toLowerCase().includes(filters.query));
+
+    return matchesQuery &&
+      (!filters.category || field.category === filters.category) &&
+      (!filters.type || field.types.includes(filters.type)) &&
+      (!filters.capability || field[filters.capability]) &&
+      (!filters.issuesOnly || field.conflict);
+  }
+
+  function filteredFields() {
+    const filters = currentFieldFilters();
+    return analysis.fields.filter((field) =>
+      fieldMatchesFilters(field, filters)
+    );
+  }
+
+  function classifyFieldIssue(field) {
+    const typeConflict = field.types.length > 1;
+    const optionWarning = field.conflict && !typeConflict;
+
+    if (typeConflict) {
+      return {
+        className: "mapping-field-conflict",
+        badge: badge("conflict", "red"),
+        optionKeys: [],
+      };
+    }
+    if (optionWarning) {
+      return {
+        className: "mapping-field-warning",
+        badge: badge("warning", "yellow"),
+        optionKeys: differingOptionKeys(field),
+      };
+    }
+    return { className: "", badge: "", optionKeys: [] };
+  }
+
+  function renderStructureBadges(field) {
+    const badges = [
+      field.runtime ? badge("runtime", "azure") : "",
+      field.multi_field ? badge("multi-field", "cyan") : "",
+      field.types.includes("nested") ? badge("nested", "purple") : "",
+      field.types.includes("join") ? badge("join", "orange") : "",
+    ].filter(Boolean);
+
+    return badges.join("") || EMPTY_VALUE;
+  }
+
+  function renderCapabilities(field) {
+    const searchable = field.searchable
+      ? badge("search", "green")
+      : badge("not searchable", "secondary");
+    const aggregatable = field.aggregatable ? badge("aggregate", "azure") : "";
+    return searchable + aggregatable;
+  }
+
+  function renderSummaryItem(label, content, className = "") {
+    return `<div class="${className}"><span class="mapping-field-summary-label">${label}</span>${content}</div>`;
+  }
+
+  function renderCoverage(field) {
+    return `<strong>${field.coverage}/${analysis.index_count}</strong><div class="progress progress-sm mt-1"><div class="progress-bar" style="width:${field.coverage_percent}%"></div></div>`;
+  }
+
+  function renderFieldSummary(field, issue) {
+    const fieldName = `<div><code>${escapeHtml(field.path)}</code>${
+      issue.badge ? ` ${issue.badge}` : ""
+    }</div>`;
+
+    return [
+      renderSummaryItem("Field", fieldName, "mapping-field-summary-name"),
+      renderSummaryItem("Category", escapeHtml(field.category)),
+      renderSummaryItem("Type", field.types.map(typeBadge).join("")),
+      renderSummaryItem("Coverage", renderCoverage(field)),
+      renderSummaryItem("Capabilities", renderCapabilities(field)),
+      renderSummaryItem("Structure", renderStructureBadges(field)),
+    ].join("");
+  }
+
+  function renderFieldOccurrence(occurrence, optionKeys) {
+    const search = occurrence.searchable ? "yes" : "no";
+    const aggregate = occurrence.aggregatable ? "yes" : "no";
+    const color = typeColor(occurrence.field_type);
+
+    return `<tr>
+      <td><code>${escapeHtml(occurrence.index)}</code></td>
+      <td class="mapping-type-cell mapping-type-${color}">${
+      typeBadge(occurrence.field_type)
+    }</td>
+      <td>${escapeHtml(occurrence.format || EMPTY_VALUE)}</td>
+      <td>${escapeHtml(occurrence.analyzer || EMPTY_VALUE)}</td>
+      <td>${search} / ${aggregate}</td>
+      <td>${occurrenceOptionDetails(occurrence, optionKeys)}</td>
+    </tr>`;
+  }
+
+  function renderFieldDetails(field, optionKeys) {
+    const rows = field.occurrences.map((occurrence) =>
+      renderFieldOccurrence(occurrence, optionKeys)
+    ).join("");
+
+    return `<div class="mapping-field-expanded"><div class="table-responsive">
+      <table class="table table-sm table-vcenter mapping-field-details-table">
+        <thead><tr><th>Index</th><th>Type</th><th>Format</th><th>Analyzer</th><th>Search / aggregate</th><th>Different settings</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div></div>`;
+  }
+
+  function renderFieldCard(field) {
+    const issue = classifyFieldIssue(field);
+    return `<details class="mapping-field-item ${issue.className}">
+      <summary class="mapping-field-summary">${
+      renderFieldSummary(field, issue)
+    }</summary>
+      ${renderFieldDetails(field, issue.optionKeys)}
+    </details>`;
+  }
+
+  function setFieldPage(page) {
+    fieldPage = page;
+    renderFields();
+  }
+
+  function renderFields() {
+    if (!analysis) return;
+
+    const fields = filteredFields();
+    const pageSize = Number(byId("field-page-size").value);
+    const page = range(fieldPage, pageSize, fields.length);
+    const visibleFields = fields.slice(page.start, page.end);
+    fieldPage = page.page;
+
+    byId("fields-summary").textContent = fields.length
+      ? `Showing ${page.start + 1}–${page.end} of ${
+        formatNumber(fields.length)
+      } matching fields`
+      : "No fields match the filters";
+    byId("fields-table").innerHTML =
+      visibleFields.map(renderFieldCard).join("") ||
+      '<div class="empty py-4"><p class="empty-title">No fields match the filters</p></div>';
+
+    pager("fields-pagination", page.page, page.pages, setFieldPage);
+    pager("fields-pagination-bottom", page.page, page.pages, setFieldPage);
+  }
+  function matrixFields() {
+    const q = byId("matrix-filter").value.trim().toLowerCase();
+    return analysis.fields.filter((f) =>
+      f.conflict &&
+      (!q || f.path.toLowerCase().includes(q) ||
+        f.types.some((t) => t.toLowerCase().includes(q)))
+    );
+  }
+  function groupedOccurrences(field, key) {
+    const groups = new Map();
+    field.occurrences.forEach((o) => {
+      const value = o[key] || "";
+      if (!groups.has(value)) groups.set(value, []);
+      groups.get(value).push(o);
+    });
+    return [...groups.entries()].sort((a, b) =>
+      b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0]))
+    );
+  }
+  function referenceOccurrence(field) {
+    const dominantType = groupedOccurrences(field, "field_type")[0]?.[1] || [],
+      signatures = new Map();
+    dominantType.forEach((o) => {
+      if (!signatures.has(o.mapping_signature)) {
+        signatures.set(o.mapping_signature, []);
+      }
+      signatures.get(o.mapping_signature).push(o);
+    });
+    return [...signatures.values()].sort((a, b) => b.length - a.length)[0]?.[0];
+  }
+  function signatureValues(signature) {
+    const values = {};
+    String(signature || "").split(";").forEach((part) => {
+      const pos = part.indexOf("=");
+      if (pos > 0) values[part.slice(0, pos)] = part.slice(pos + 1);
+    });
+    return values;
+  }
+  function differingOptionKeys(field) {
+    const definitions = field.occurrences.map((o) =>
+        signatureValues(o.mapping_signature)
+      ),
+      keys = [...new Set(definitions.flatMap((v) => Object.keys(v)))];
+    return keys.filter((k) =>
+      k !== "type" &&
+      new Set(definitions.map((value) => value[k] ?? EMPTY_VALUE)).size > 1
+    );
+  }
+  function occurrenceOptionDetails(occurrence, keys) {
+    if (!keys.length) return '<span class="text-muted">—</span>';
+    const values = signatureValues(occurrence.mapping_signature);
+    return keys.map((key) =>
+      `<div class="text-nowrap"><code>${escapeHtml(key)}</code>: <code>${
+        escapeHtml(values[key] ?? "not set")
+      }</code></div>`
+    ).join("");
+  }
+  function indexDetails(items) {
+    return `<details><summary>Show index names</summary><div class="mapping-index-list mt-1">${
+      items.map((o) =>
+        `<code class="d-block mb-1">${escapeHtml(o.index)}</code>`
+      ).join("")
+    }</div></details>`;
+  }
+  function renderTypeDefinitions(field) {
+    return groupedOccurrences(field, "field_type").map((
+      [type, items],
+      position,
+    ) =>
+      `<div class="mapping-definition">${
+        badge(type, position === 0 ? "blue" : "red")
+      }<strong>${items.length}</strong><span class="text-muted">${
+        items.length === 1 ? "index" : "indices"
+      }</span>${indexDetails(items)}</div>`
+    ).join("");
+  }
+  function renderOptionDefinitions(field) {
+    const keys = differingOptionKeys(field);
+    return groupedOccurrences(field, "mapping_signature").map(
+      ([signature, items], position) => {
+        const values = signatureValues(signature),
+          label =
+            keys.map((key) => `${key}=${values[key] ?? EMPTY_VALUE}`).join(
+              " · ",
+            ) ||
+            "different mapping definition";
+        return `<div class="mapping-definition">${
+          badge(
+            position === 0 ? "reference" : "variant",
+            position === 0 ? "blue" : "yellow",
+          )
+        }<code>${escapeHtml(label)}</code><strong>${items.length}</strong>${
+          indexDetails(items)
+        }</div>`;
+      },
+    ).join("");
+  }
+  function renderHumanMatrixReport(fields) {
+    const typeFields = fields.filter((f) => f.types.length > 1),
+      optionFields = fields.filter((f) => f.types.length === 1),
+      typeRange = range(
+        matrixTypePage,
+        PAGE_SIZE.matrixReport,
+        typeFields.length,
+      ),
+      optionRange = range(
+        matrixOptionPage,
+        PAGE_SIZE.matrixReport,
+        optionFields.length,
+      );
+    matrixTypePage = typeRange.page;
+    matrixOptionPage = optionRange.page;
+    byId("matrix-summary").textContent =
+      `${typeFields.length} type conflicts · ${optionFields.length} option conflicts`;
+    const typeRows = typeFields.slice(typeRange.start, typeRange.end).map((f) =>
+      `<tr><td><code>${escapeHtml(f.path)}</code></td><td>${
+        renderTypeDefinitions(f)
+      }</td><td>${f.coverage}/${analysis.index_count}</td><td>Indices disagree on the data type. Cross-index search, sorting or aggregation may fail.</td></tr>`
+    ).join("");
+    const optionRows = optionFields.slice(optionRange.start, optionRange.end)
+      .map((f) =>
+        `<tr><td><code>${escapeHtml(f.path)}</code><div class="mt-1">${
+          badge(f.types[0], "blue")
+        }</div></td><td>${
+          differingOptionKeys(f).map((k) => badge(k, "yellow")).join("")
+        }</td><td>${
+          renderOptionDefinitions(f)
+        }</td><td>${f.coverage}/${analysis.index_count}</td></tr>`
+      ).join("");
+    byId("matrix-human-report").innerHTML =
+      `<section><div class="d-flex justify-content-between align-items-center mb-2"><div><h3 class="mb-0">Different data types <span class="badge bg-red-lt ms-1">${typeFields.length}</span></h3><div class="text-muted small">The same field is mapped as different Elasticsearch types.</div></div><div id="matrix-type-pagination"></div></div>${
+        typeRows
+          ? `<div class="table-responsive"><table class="table table-vcenter mapping-comparison-table"><thead><tr><th>Field</th><th>Definitions by index</th><th>Coverage</th><th>Why it matters</th></tr></thead><tbody>${typeRows}</tbody></table></div>`
+          : '<div class="alert alert-success">No data type conflicts in this scope.</div>'
+      }</section><section class="mt-4"><div class="d-flex justify-content-between align-items-center mb-2"><div><h3 class="mb-0">Different mapping options <span class="badge bg-yellow-lt ms-1">${optionFields.length}</span></h3><div class="text-muted small">The data type matches, but format, analyzer or another material setting differs.</div></div><div id="matrix-option-pagination"></div></div>${
+        optionRows
+          ? `<div class="table-responsive"><table class="table table-vcenter mapping-comparison-table"><thead><tr><th>Field and type</th><th>Different settings</th><th>Definitions by index</th><th>Coverage</th></tr></thead><tbody>${optionRows}</tbody></table></div>`
+          : '<div class="alert alert-success">No mapping-option conflicts in this scope.</div>'
+      }</section>`;
+    pager("matrix-type-pagination", typeRange.page, typeRange.pages, (p) => {
+      matrixTypePage = p;
+      renderMatrix();
+    });
+    pager(
+      "matrix-option-pagination",
+      optionRange.page,
+      optionRange.pages,
+      (p) => {
+        matrixOptionPage = p;
+        renderMatrix();
+      },
+    );
+  }
+  function renderMatrix() {
+    if (!analysis) return;
+    const allFields = matrixFields(),
+      fr = range(matrixFieldPage, PAGE_SIZE.matrixFields, allFields.length),
+      ir = range(
+        matrixIndexPage,
+        PAGE_SIZE.matrixIndices,
+        analysis.indices.length,
+      ),
+      fields = allFields.slice(fr.start, fr.end),
+      indices = analysis.indices.slice(ir.start, ir.end);
+    matrixFieldPage = fr.page;
+    matrixIndexPage = ir.page;
+    renderHumanMatrixReport(allFields);
+    byId("matrix-head").innerHTML = `<tr><th>Field</th>${
+      indices.map((i) =>
+        `<th title="${escapeHtml(i.name)}">${
+          escapeHtml(i.name.length > 24 ? i.name.slice(0, 21) + "…" : i.name)
+        }</th>`
+      ).join("")
+    }</tr>`;
+    byId("matrix-body").innerHTML = fields.map((f) => {
+      const reference = referenceOccurrence(f);
+      return `<tr><td><code>${escapeHtml(f.path)}</code></td>${
+        indices.map((index) => {
+          const o = f.occurrences.find((item) => item.index === index.name);
+          if (!o) return '<td class="text-muted">—</td>';
+          const differentType = reference &&
+              o.field_type !== reference.field_type,
+            differentOptions = reference &&
+              o.mapping_signature !== reference.mapping_signature;
+          const cellClass = differentType
+              ? "table-danger"
+              : differentOptions
+              ? "table-warning"
+              : "",
+            color = differentType
+              ? "red"
+              : differentOptions
+              ? "yellow"
+              : "blue",
+            title = differentType
+              ? `Different type; reference is ${reference.field_type}`
+              : differentOptions
+              ? "Same type, different mapping options"
+              : "Most common definition";
+          return `<td class="${cellClass}" title="${escapeHtml(title)}">${
+            badge(o.field_type, color)
+          }</td>`;
+        }).join("")
+      }</tr>`;
+    }).join("") ||
+      `<tr><td colspan="${
+        indices.length + 1
+      }" class="text-center text-muted py-4">No conflicting fields match the filter</td></tr>`;
+    pager("matrix-field-pagination", fr.page, fr.pages, (p) => {
+      matrixFieldPage = p;
+      renderMatrix();
+    });
+    pager("matrix-index-pagination", ir.page, ir.pages, (p) => {
+      matrixIndexPage = p;
+      renderMatrix();
+    });
+  }
+  function renderRelations() {
+    const joins = analysis.relations.map((i) =>
+      `<tr><td><code>${escapeHtml(i.index)}</code></td><td><code>${
+        escapeHtml(i.field)
+      }</code></td><td>${
+        badge(i.parent, "purple")
+      }<i class="ti ti-arrow-right mx-1"></i>${
+        badge(i.child, "orange")
+      }</td></tr>`
+    ).join("");
+    const nested = analysis.fields.filter((f) => f.types.includes("nested")),
+      r = range(nestedPage, PAGE_SIZE.nestedFields, nested.length),
+      rows = nested.slice(r.start, r.end).map((f) =>
+        `<tr><td><code>${
+          escapeHtml(f.path)
+        }</code></td><td>${f.coverage}/${analysis.index_count}</td><td><details><summary>${f.occurrences.length} indices</summary><div class="mapping-index-list mt-2">${
+          f.occurrences.map((o) =>
+            `<code class="d-block mb-1">${escapeHtml(o.index)}</code>`
+          ).join("")
+        }</div></details></td></tr>`
+      ).join("");
+    nestedPage = r.page;
+    byId("relations-content").innerHTML = `<h3>Parent / child joins</h3>${
+      joins
+        ? `<div class="table-responsive"><table class="table"><thead><tr><th>Index</th><th>Join field</th><th>Relation</th></tr></thead><tbody>${joins}</tbody></table></div>`
+        : '<div class="alert alert-info">No join relations were found in this scope.</div>'
+    }<div class="d-flex justify-content-between align-items-center mt-4"><h3 class="mb-0">Nested structures</h3><div id="nested-pagination"></div></div>${
+      rows
+        ? `<div class="table-responsive"><table class="table"><thead><tr><th>Field</th><th>Coverage</th><th>Indices</th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : '<div class="text-muted mt-3">No nested fields were found.</div>'
+    }`;
+    pager("nested-pagination", r.page, r.pages, (p) => {
+      nestedPage = p;
+      renderRelations();
+    });
+  }
+  function filteredConflicts() {
+    const q = byId("conflict-filter").value.trim().toLowerCase();
+    return analysis.fields.filter((f) =>
+      f.conflict &&
+      (!q || f.path.toLowerCase().includes(q) ||
+        f.types.some((t) => t.toLowerCase().includes(q)))
+    );
+  }
+  function optionDifferences(field) {
+    const parsed = field.occurrences.map((o) =>
+      signatureValues(o.mapping_signature)
+    );
+    return differingOptionKeys(field).map((k) =>
+      `${k}: ${
+        [...new Set(parsed.map((value) => value[k] ?? EMPTY_VALUE))].join(
+          " / ",
+        )
+      }`
+    );
+  }
+  function groupConflictVariants(field) {
+    const typeConflict = field.types.length > 1;
+    const groups = new Map();
+    field.occurrences.forEach((o) => {
+      const key = typeConflict ? o.field_type : o.mapping_signature;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(o);
+    });
+    return [...groups.values()].sort((a, b) => b.length - a.length);
+  }
+  function renderConflictVariant(items, optionKeys, position) {
+    const occurrence = items[0],
+      values = signatureValues(occurrence.mapping_signature),
+      settings = optionKeys.map((key) =>
+        `<span><strong>${escapeHtml(key)}</strong>: <code>${
+          escapeHtml(values[key] ?? EMPTY_VALUE)
+        }</code></span>`
+      ).join('<span class="text-muted mx-1">·</span>'),
+      variantLabel = optionKeys.length
+        ? badge(
+          position === 0 ? "most common" : `variant ${position + 1}`,
+          position === 0 ? "blue" : "yellow",
+        )
+        : "";
+    return `<div class="mapping-conflict-variant"><div class="d-flex flex-wrap align-items-center gap-2">${
+      typeBadge(occurrence.field_type)
+    }${variantLabel}<strong>${items.length}</strong><span class="text-muted">${
+      items.length === 1 ? "index" : "indices"
+    }</span>${
+      settings ? `<span class="small">${settings}</span>` : ""
+    }</div><div class="mapping-index-list mt-2">${
+      items.map((item) =>
+        `<code class="d-block mb-1">${escapeHtml(item.index)}</code>`
+      ).join("")
+    }</div></div>`;
+  }
+  function conflictDetails(field) {
+    const optionKeys = field.types.length > 1 ? [] : differingOptionKeys(field);
+    return groupConflictVariants(field).map((items, position) =>
+      renderConflictVariant(items, optionKeys, position)
+    ).join("");
+  }
+  function conflictIssues(field) {
+    return (field.types.length > 1
+      ? field.conflict_reasons
+      : [...field.conflict_reasons, ...optionDifferences(field)]).slice(0, 3);
+  }
+  function renderConflictIssues(issues) {
+    return issues.map((issue) =>
+      `<div><i class="ti ti-alert-triangle text-warning me-1"></i>${
+        escapeHtml(issue)
+      }</div>`
+    ).join("");
+  }
+  function renderConflictCard(field) {
+    const typeConflict = field.types.length > 1;
+    return `<div class="card mb-3 ${
+      typeConflict ? "border-danger" : "border-warning"
+    }"><div class="card-body"><div class="mapping-conflict-summary"><div><code>${
+      escapeHtml(field.path)
+    }</code><div class="mt-1">${
+      field.types.map(typeBadge).join("")
+    }</div></div><div class="small">${
+      renderConflictIssues(conflictIssues(field))
+    }</div><div class="mapping-conflict-coverage text-muted">${field.coverage}/${analysis.index_count} indices</div></div><details class="mapping-conflict-details mt-3"><summary>Show variants</summary><div class="mapping-conflict-variants">${
+      conflictDetails(field)
+    }</div></details></div></div>`;
+  }
+  function renderConflicts() {
+    const conflicts = filteredConflicts(),
+      size = Number(byId("conflict-page-size").value),
+      r = range(conflictPage, size, conflicts.length);
+    conflictPage = r.page;
+    byId("conflicts-summary").textContent = conflicts.length
+      ? `Showing ${r.start + 1}–${r.end} of ${
+        formatNumber(conflicts.length)
+      } conflicts`
+      : "No mapping conflicts match the filter";
+    byId("conflicts-content").innerHTML =
+      conflicts.slice(r.start, r.end).map(renderConflictCard).join("") ||
+      '<div class="empty"><div class="empty-icon"><i class="ti ti-circle-check text-success"></i></div><p class="empty-title">No mapping conflicts found</p><p class="empty-subtitle text-muted">Selected indices use compatible field definitions.</p></div>';
+    pager("conflicts-pagination", r.page, r.pages, (p) => {
+      conflictPage = p;
+      renderConflicts();
+    });
+  }
+  function renderFamilies() {
+    const rows = analysis.orphan_candidates.map((c) => {
+      const color = c.confidence === "High"
+        ? "red"
+        : c.confidence === "Medium"
+        ? "yellow"
+        : "secondary";
+      return `<div class="card mb-3 mapping-orphan-${c.confidence.toLowerCase()}"><div class="card-body"><div class="d-flex flex-wrap gap-3"><div class="flex-fill"><div class="d-flex align-items-center gap-2"><h3 class="mb-0"><code>${
+        escapeHtml(c.index)
+      }</code></h3>${badge(c.confidence + " confidence", color)}${
+        badge(c.score + "/100", color)
+      }</div><div class="text-muted mt-2">Potential cleanup candidate only — review before taking any action.</div></div><div class="text-end"><div>${
+        formatNumber(c.docs_count)
+      } docs</div><div class="text-muted">${
+        formatBytes(c.store_size_bytes)
+      }</div></div></div><div class="row mt-3"><div class="col-lg-6"><dl class="row mb-0"><dt class="col-4">Likely family</dt><dd class="col-8"><code>${
+        escapeHtml(c.likely_family || "not identified")
+      }</code></dd><dt class="col-4">Active index</dt><dd class="col-8"><code>${
+        escapeHtml(c.active_index || "not identified")
+      }</code></dd><dt class="col-4">Mapping</dt><dd class="col-8">${
+        c.mapping_identical
+          ? badge("identical", "green")
+          : badge("different or unknown", "secondary")
+      }</dd></dl></div><div class="col-lg-6"><strong>Why it was flagged</strong><ul class="mb-0 mt-1">${
+        c.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join("")
+      }</ul></div></div></div></div>`;
+    }).join("");
+    byId("families-content").innerHTML =
+      `<div class="alert alert-warning"><h4 class="alert-title"><i class="ti ti-shield-exclamation me-1"></i>Conservative, read-only detection</h4>No-alias status is not proof that an index is unused. System, hidden, data-stream and ILM-managed indices are excluded. Activity over time is not yet measured.</div>${
+        rows ||
+        '<div class="empty"><div class="empty-icon"><i class="ti ti-circle-check text-success"></i></div><p class="empty-title">No cleanup candidates found</p></div>'
+      }`;
+  }
+
+  byId("mapping-scope-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const pattern = byId("mapping-pattern").value.trim();
+    if (pattern) loadAnalysis(pattern, true);
+  });
+  byId("mapping-hide-internal").addEventListener("change", () => {
+    const pattern = byId("mapping-pattern").value.trim();
+    if (pattern) loadAnalysis(pattern, false);
+  });
+  [
+    "field-filter",
+    "field-category",
+    "field-type",
+    "field-capability",
+    "field-conflicts-only",
+    "field-page-size",
+  ].forEach((id) =>
+    byId(id).addEventListener(
+      id === "field-filter" ? "input" : "change",
+      () => {
+        fieldPage = FIRST_PAGE;
+        renderFields();
+      },
+    )
+  );
+  byId("matrix-filter").addEventListener("input", () => {
+    matrixFieldPage = matrixTypePage = matrixOptionPage = FIRST_PAGE;
+    renderMatrix();
+  });
+  ["conflict-filter", "conflict-page-size"].forEach((id) =>
+    byId(id).addEventListener(
+      id === "conflict-filter" ? "input" : "change",
+      () => {
+        conflictPage = FIRST_PAGE;
+        renderConflicts();
+      },
+    )
+  );
+  loadAnalysis(byId("mapping-pattern").value.trim() || "*", false);
+})();
+</script>
+{% endblock %}

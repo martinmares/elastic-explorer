@@ -240,6 +240,11 @@ async fn main() -> Result<()> {
         .route("/indices/table", get(handlers::indices::indices_table))
         .route("/indices/summary", get(handlers::indices::indices_summary))
         .route("/indices/metrics", get(handlers::indices::indices_metrics))
+        .route("/mappings", get(handlers::mappings::mappings_page))
+        .route(
+            "/mappings/analysis",
+            get(handlers::mappings::mappings_analysis),
+        )
         .route(
             "/indices/detail/{index_name}",
             get(handlers::indices::index_detail),

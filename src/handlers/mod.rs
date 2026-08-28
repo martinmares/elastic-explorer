@@ -2,6 +2,7 @@ pub mod console;
 pub mod dashboard;
 pub mod endpoints;
 pub mod indices;
+pub mod mappings;
 pub mod nodes;
 pub mod search;
 pub mod shards;
