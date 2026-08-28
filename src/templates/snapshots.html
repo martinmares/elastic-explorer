@@ -62,7 +62,7 @@
             <h3 class="card-title"><i class="ti ti-clock-cog me-2"></i>Automatic snapshot schedule</h3>
             <div class="text-muted small" id="schedule-source">Configured from <code>SCHEDULED_SNAPSHOT_*</code> for this stateless connection</div>
         </div>
-        <div class="card-actions"><span class="badge bg-azure-lt"><span class="status-dot bg-azure me-1"></span>Waiting</span></div>
+        <div class="card-actions"><span class="badge bg-azure-lt" id="schedule-state"><span class="status-dot bg-azure me-1"></span>Starting</span></div>
     </div>
     <div class="card-body" id="schedule-body">
         <div class="text-secondary">Not configured. Set <code>SCHEDULED_SNAPSHOT_CRON</code> at startup.</div>
@@ -166,22 +166,32 @@
     function renderSchedule() {
         if (!data.schedule) {
             $("schedule-source").innerHTML = `Not configured for this stateless connection`;
+            $("schedule-state").classList.add("d-none");
             return;
         }
-        const entry = data.schedule[Object.keys(data.schedule)[0]] || {};
-        const policy = entry.policy || {};
-        const success = entry.last_success || {};
-        const note = policy.config?.metadata?.note || "";
+        const schedule = data.schedule;
+        const running = schedule.state === "Running";
+        const state = $("schedule-state");
+        state.className = `badge ${running ? "bg-yellow-lt" : "bg-azure-lt"}`;
+        state.innerHTML = `<span class="status-dot ${running ? "status-dot-animated bg-yellow" : "bg-azure"} me-1"></span>${esc(schedule.state)}`;
         $("schedule-body").innerHTML = `<div class="row g-3">
             <div class="col-md-3"><div class="text-muted small">Index scope</div><div><i class="ti ti-filter me-1"></i>${esc(data.index_pattern)}</div></div>
-            <div class="col-md-3"><div class="text-muted small">Schedule</div><div><code>${esc(policy.schedule)}</code></div><div class="text-muted small">UTC</div></div>
-            <div class="col-md-3"><div class="text-muted small">Next run</div><time title="${esc(isoTime(entry.next_execution_millis))}">${esc(localTime(entry.next_execution_millis))}</time></div>
-            <div class="col-md-3"><div class="text-muted small">Last run</div>${success.time ? `<time title="${esc(success.time)}">${esc(localTime(success.time))}</time><div class="small text-success"${success.snapshot_name ? ` title="${esc(success.snapshot_name)}"` : ""}>Completed</div>` : `<span class="text-muted">Not run yet</span>`}</div>
+            <div class="col-md-3"><div class="text-muted small">Schedule</div><div><code>${esc(schedule.cron)}</code></div><div class="text-muted small">${esc(schedule.timezone)}</div></div>
+            <div class="col-md-3"><div class="text-muted small">Next run</div>${schedule.next_run ? `<time title="${esc(isoTime(schedule.next_run))}">${esc(localTime(schedule.next_run))}</time>` : `<span class="text-muted">${running ? "Running now…" : "Calculating…"}</span>`}</div>
+            <div class="col-md-3"><div class="text-muted small">Last run</div>${schedule.last_completed_at ? `<time title="${esc(isoTime(schedule.last_completed_at))}">${esc(localTime(schedule.last_completed_at))}</time><div class="small ${schedule.last_result === "Completed" ? "text-success" : "text-danger"}">${esc(schedule.last_result || "")}</div>` : `<span class="text-muted">Not run yet</span>`}</div>
         </div>
         <div class="row g-3 mt-1">
-            <div class="col-md-6"><span class="text-muted small me-2">Retention</span>Keep at least ${esc(policy.retention?.min_count || "—")}; delete older than ${esc(policy.retention?.expire_after || "—")}</div>
-            ${note ? `<div class="col-md-6"><span class="text-muted small me-2">Note</span>${esc(note)}</div>` : ""}
-        </div>`;
+            <div class="col-md-6"><span class="text-muted small me-2">Retention</span>Keep last ${esc(schedule.keep_last)}; delete older than ${esc(schedule.max_age_days)} days</div>
+            ${schedule.note ? `<div class="col-md-6"><span class="text-muted small me-2">Note</span>${esc(schedule.note)}</div>` : ""}
+        </div>
+        ${schedule.last_error ? `<div class="alert alert-danger mt-3 mb-0"><strong>Last error:</strong> ${esc(schedule.last_error)}</div>` : ""}`;
+    }
+
+    async function refreshSchedule() {
+        try {
+            data.schedule = await api("/snapshots/schedule-status");
+            renderSchedule();
+        } catch (_) {}
     }
 
     function renderPicker() {
@@ -306,6 +316,7 @@
     document.querySelectorAll('[name="scope"]').forEach(input => input.onchange = () => $("index-picker").classList.toggle("d-none", input.value !== "selected" || !input.checked));
     document.querySelectorAll('[name="restore-mode"]').forEach(input => input.onchange = updateRestoreMode); $("destination-prefix").oninput = updatePreview;
     load();
+    setInterval(refreshSchedule, 10000);
 })();
 </script>
 {% endblock %}

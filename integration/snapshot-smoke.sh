@@ -87,11 +87,10 @@ request POST "/_snapshot/$repository/$snapshot/_restore?wait_for_completion=true
 [[ "$(request GET '/tsm-sdaorder_000001/_count' | jq -r .count)" == "1" ]]
 [[ "$(request GET '/tsm-sdaorder_000001/_alias/tsm-sdaorder' | jq -r '.[].aliases["tsm-sdaorder"].is_write_index')" == "true" ]]
 
-echo "Testing SLM policy creation and execution"
-request PUT '/_slm/policy/elastic-explorer-smoke' "$(jq -nc --arg repo "$repository" '{schedule:"0 0 0 1 1 ? 2099",name:"<elastic-explorer-scheduled-{now{yyyy.MM.dd-HH.mm.ss}}>",repository:$repo,config:{indices:"tsm-sda*",include_global_state:false,partial:false,metadata:{created_by:"elastic-explorer",kind:"scheduled",scope:"all",index_prefix:"tsm-sda"}},retention:{expire_after:"30d",min_count:1}}')" >/dev/null
-scheduled_name="$(request PUT '/_slm/policy/elastic-explorer-smoke/_execute' | jq -r .snapshot_name)"
-[[ -n "$scheduled_name" && "$scheduled_name" != "null" ]]
-echo "SLM created snapshot $scheduled_name"
+echo "Testing native snapshot metadata used by the application scheduler"
+scheduled_name="elastic-explorer-scheduled-smoke"
+scheduled_body="$(jq -nc --arg uuid "$cluster_uuid" --arg cluster "$cluster_name" '{indices:"tsm-sda*",include_global_state:false,partial:false,metadata:{created_by:"elastic-explorer",kind:"scheduled",scope:"all",note:"Automatic smoke test",index_prefix:"tsm-sda",source_cluster_uuid:$uuid,source_cluster_name:$cluster}}')"
+request PUT "/_snapshot/$repository/$scheduled_name?wait_for_completion=false" "$scheduled_body" >/dev/null
 wait_snapshot "$scheduled_name"
 [[ "$(request GET "/_snapshot/$repository/$scheduled_name" | jq -r '.snapshots[0].metadata.kind')" == "scheduled" ]]
 

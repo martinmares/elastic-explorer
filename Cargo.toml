@@ -1,6 +1,6 @@
 [package]
 name = "elastic-explorer"
-version = "0.8.4"
+version = "0.8.5"
 edition = "2024"
 
 [dependencies]
@@ -42,6 +42,8 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+cron = "0.15"
 time = "0.3"
 urlencoding = "2.1"
 rust-embed = "8"

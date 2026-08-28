@@ -108,15 +108,23 @@ struct Args {
     #[arg(long, env = "SNAPSHOT_INDEX_PREFIX")]
     snapshot_index_prefix: Option<String>,
 
-    /// Elasticsearch SLM cron expression (for example: 0 0 20 * * ?)
+    /// Seven-field cron expression including seconds and year (for example: 0 0 20 * * * *)
     #[arg(long, env = "SCHEDULED_SNAPSHOT_CRON")]
     scheduled_snapshot_cron: Option<String>,
 
-    /// Minimum number of automatic snapshots retained by SLM
+    /// IANA timezone used to evaluate the automatic snapshot cron
+    #[arg(
+        long,
+        env = "SCHEDULED_SNAPSHOT_TIMEZONE",
+        default_value = "Europe/Prague"
+    )]
+    scheduled_snapshot_timezone: String,
+
+    /// Minimum number of automatic snapshots retained
     #[arg(long, env = "SCHEDULED_SNAPSHOT_KEEP_LAST", default_value_t = 14)]
     scheduled_snapshot_keep_last: u32,
 
-    /// Automatic snapshot age after which SLM may delete it
+    /// Automatic snapshot age after which the application scheduler may delete it
     #[arg(long, env = "SCHEDULED_SNAPSHOT_MAX_AGE_DAYS", default_value_t = 30)]
     scheduled_snapshot_max_age_days: u32,
 
@@ -191,6 +199,7 @@ async fn main() -> Result<()> {
         args.snapshot_repository,
         args.snapshot_index_prefix,
         args.scheduled_snapshot_cron,
+        args.scheduled_snapshot_timezone,
         args.scheduled_snapshot_keep_last,
         args.scheduled_snapshot_max_age_days,
         args.scheduled_snapshot_note,
@@ -210,6 +219,7 @@ async fn main() -> Result<()> {
     });
 
     handlers::snapshots::initialize(&state).await?;
+    handlers::snapshots::start_scheduler(state.clone());
 
     let auth_config = Arc::new(auth::AuthConfig {
         enabled: args.trusted_proxy_auth,
@@ -299,6 +309,10 @@ async fn main() -> Result<()> {
         .route("/console/execute", post(handlers::console::execute_request))
         .route("/snapshots", get(handlers::snapshots::snapshots_page))
         .route("/snapshots/overview", get(handlers::snapshots::overview))
+        .route(
+            "/snapshots/schedule-status",
+            get(handlers::snapshots::schedule_status),
+        )
         .route(
             "/snapshots/create",
             post(handlers::snapshots::create_snapshot),

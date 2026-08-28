@@ -7,10 +7,11 @@ use axum::{
     response::Html,
 };
 use axum_extra::extract::CookieJar;
-use chrono::Utc;
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc, time::Duration};
+use tokio::sync::RwLock;
 
 use crate::{
     es::EsClient,
@@ -25,14 +26,49 @@ pub struct SnapshotConfig {
     pub repository: String,
     pub index_prefix: String,
     pub schedule: Option<ScheduledSnapshotConfig>,
+    schedule_status: Arc<RwLock<Option<ScheduledSnapshotStatus>>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ScheduledSnapshotConfig {
     pub cron: String,
+    pub timezone: String,
     pub keep_last: u32,
     pub max_age_days: u32,
     pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ScheduledSnapshotStatus {
+    pub cron: String,
+    pub timezone: String,
+    pub keep_last: u32,
+    pub max_age_days: u32,
+    pub note: String,
+    pub state: String,
+    pub next_run: Option<DateTime<Utc>>,
+    pub last_started_at: Option<DateTime<Utc>>,
+    pub last_completed_at: Option<DateTime<Utc>>,
+    pub last_result: Option<String>,
+    pub last_error: Option<String>,
+}
+
+impl ScheduledSnapshotStatus {
+    fn from_config(config: &ScheduledSnapshotConfig) -> Self {
+        Self {
+            cron: config.cron.clone(),
+            timezone: config.timezone.clone(),
+            keep_last: config.keep_last,
+            max_age_days: config.max_age_days,
+            note: config.note.clone(),
+            state: "Starting".to_string(),
+            next_run: None,
+            last_started_at: None,
+            last_completed_at: None,
+            last_result: None,
+            last_error: None,
+        }
+    }
 }
 
 impl SnapshotConfig {
@@ -43,6 +79,7 @@ impl SnapshotConfig {
         repository: Option<String>,
         index_prefix: Option<String>,
         cron: Option<String>,
+        timezone: String,
         keep_last: u32,
         max_age_days: u32,
         note: String,
@@ -66,22 +103,46 @@ impl SnapshotConfig {
         let schedule = cron
             .map(|cron| cron.trim().to_string())
             .filter(|cron| !cron.is_empty())
-            .map(|cron| ScheduledSnapshotConfig {
-                cron,
-                keep_last,
-                max_age_days,
-                note: note.trim().to_string(),
-            });
+            .map(|cron| {
+                validate_application_cron(&cron)?;
+                timezone
+                    .parse::<chrono_tz::Tz>()
+                    .map_err(|_| anyhow!("invalid SCHEDULED_SNAPSHOT_TIMEZONE: {timezone}"))?;
+                Ok::<ScheduledSnapshotConfig, anyhow::Error>(ScheduledSnapshotConfig {
+                    cron,
+                    timezone,
+                    keep_last,
+                    max_age_days,
+                    note: note.trim().to_string(),
+                })
+            })
+            .transpose()?;
+        let schedule_status = Arc::new(RwLock::new(
+            schedule.as_ref().map(ScheduledSnapshotStatus::from_config),
+        ));
         Ok(Some(Self {
             repository,
             index_prefix,
             schedule,
+            schedule_status,
         }))
     }
 
     fn pattern(&self) -> String {
         format!("{}*", self.index_prefix)
     }
+}
+
+fn validate_application_cron(value: &str) -> Result<()> {
+    if value.split_whitespace().count() != 7 {
+        bail!(
+            "SCHEDULED_SNAPSHOT_CRON must use seven fields: seconds minutes hours day-of-month month day-of-week year"
+        );
+    }
+    value
+        .parse::<cron::Schedule>()
+        .map_err(|error| anyhow!("invalid SCHEDULED_SNAPSHOT_CRON: {error}"))?;
+    Ok(())
 }
 
 fn required_setting(value: Option<String>, name: &str) -> Result<String> {
@@ -127,6 +188,19 @@ async fn client(state: &AppState, jar: &CookieJar) -> Result<EsClient> {
     EsClient::new(endpoint.url, endpoint.insecure, endpoint.username, password)
 }
 
+fn stateless_client(state: &AppState) -> Result<EsClient> {
+    let endpoint = state
+        .stateless_endpoint
+        .as_ref()
+        .context("snapshot mode requires a stateless endpoint")?;
+    EsClient::new(
+        endpoint.url.clone(),
+        endpoint.insecure,
+        endpoint.username.clone(),
+        state.stateless_password.clone(),
+    )
+}
+
 fn config(state: &AppState) -> Result<&SnapshotConfig> {
     state
         .snapshots
@@ -138,16 +212,7 @@ pub async fn initialize(state: &Arc<AppState>) -> Result<()> {
     let Some(config) = &state.snapshots else {
         return Ok(());
     };
-    let endpoint = state
-        .stateless_endpoint
-        .as_ref()
-        .context("snapshot mode requires a stateless endpoint")?;
-    let client = EsClient::new(
-        endpoint.url.clone(),
-        endpoint.insecure,
-        endpoint.username.clone(),
-        state.stateless_password.clone(),
-    )?;
+    let client = stateless_client(state)?;
     let _: Value = client
         .get(&format!("/_snapshot/{}", config.repository))
         .await
@@ -164,72 +229,288 @@ pub async fn initialize(state: &Arc<AppState>) -> Result<()> {
         bail!("snapshot repository verification failed ({status}): {body}");
     }
 
-    if let Some(schedule) = &config.schedule {
-        let cluster: Value = client.get("/").await?;
-        let cluster_name = string_at(&cluster, "cluster_name");
-        let cluster_uuid = string_at(&cluster, "cluster_uuid");
-        let body = json!({
-            "schedule": schedule.cron,
-            "name": "<elastic-explorer-scheduled-{now{yyyy.MM.dd-HH.mm.ss}}>",
-            "repository": config.repository,
-            "config": {
-                "indices": config.pattern(),
-                "ignore_unavailable": false,
-                "include_global_state": false,
-                "partial": false,
-                "metadata": {
-                    "created_by": "elastic-explorer",
-                    "kind": "scheduled",
-                    "scope": "all",
-                    "note": schedule.note,
-                    "index_prefix": config.index_prefix,
-                    "source_cluster_name": cluster_name,
-                    "source_cluster_uuid": cluster_uuid
-                }
-            },
-            "retention": {
-                "expire_after": format!("{}d", schedule.max_age_days),
-                "min_count": schedule.keep_last
-            }
-        });
-        let existing = client
-            .get::<Value>(&format!("/_slm/policy/{POLICY_ID}"))
+    // Versions before 0.8.4 used this SLM policy. Remove it during startup so
+    // the application scheduler and the legacy policy cannot create duplicates.
+    let (legacy_status, legacy_body) =
+        client
+            .get_raw(&format!("/_slm/policy/{POLICY_ID}"))
             .await
-            .ok();
-        if !slm_policy_matches(existing.as_ref(), &body) {
+            .context("failed to check for the legacy automatic snapshot SLM policy")?;
+    match legacy_status {
+        200 => {
             let _: Value = client
-                .put(&format!("/_slm/policy/{POLICY_ID}"), body)
+                .delete(&format!("/_slm/policy/{POLICY_ID}"))
                 .await
-                .context("failed to reconcile the automatic snapshot SLM policy")?;
+                .context("failed to remove the legacy automatic snapshot SLM policy")?;
             tracing::info!(
                 policy = POLICY_ID,
-                "automatic snapshot SLM policy reconciled"
-            );
-        } else {
-            tracing::info!(
-                policy = POLICY_ID,
-                "automatic snapshot SLM policy unchanged"
+                "legacy automatic snapshot SLM policy removed"
             );
         }
-    } else if client
-        .get::<Value>(&format!("/_slm/policy/{POLICY_ID}"))
-        .await
-        .is_ok()
-    {
-        let _: Value = client
-            .delete(&format!("/_slm/policy/{POLICY_ID}"))
-            .await
-            .context("failed to disable the automatic snapshot SLM policy")?;
-        tracing::info!(policy = POLICY_ID, "automatic snapshot SLM policy disabled");
+        404 => {}
+        status => bail!("failed to inspect legacy SLM policy ({status}): {legacy_body}"),
     }
     Ok(())
 }
 
-fn slm_policy_matches(existing: Option<&Value>, desired: &Value) -> bool {
-    let actual = &existing.unwrap_or(&Value::Null)[POLICY_ID]["policy"];
-    ["schedule", "name", "repository", "config", "retention"]
+pub fn start_scheduler(state: Arc<AppState>) {
+    let Some(snapshot_config) = state.snapshots.clone() else {
+        return;
+    };
+    let Some(schedule_config) = snapshot_config.schedule.clone() else {
+        return;
+    };
+
+    tokio::spawn(async move {
+        let schedule = schedule_config
+            .cron
+            .parse::<cron::Schedule>()
+            .expect("scheduled snapshot cron validated at startup");
+        let timezone = schedule_config
+            .timezone
+            .parse::<chrono_tz::Tz>()
+            .expect("scheduled snapshot timezone validated at startup");
+
+        if let Err(error) = initialize_schedule_status(&state, &snapshot_config).await {
+            tracing::warn!(error = %error, "failed to load the latest automatic snapshot status");
+        }
+
+        loop {
+            let now = Utc::now().with_timezone(&timezone);
+            let Some(next) = schedule.after(&now).next() else {
+                let message = "automatic snapshot cron has no next occurrence".to_string();
+                update_schedule_status(&snapshot_config, |status| {
+                    status.state = "Failed".to_string();
+                    status.next_run = None;
+                    status.last_error = Some(message.clone());
+                })
+                .await;
+                tracing::error!(cron = %schedule_config.cron, "{message}");
+                return;
+            };
+            let next_utc = next.with_timezone(&Utc);
+            let delay = next_utc
+                .signed_duration_since(Utc::now())
+                .to_std()
+                .unwrap_or_default();
+            update_schedule_status(&snapshot_config, |status| {
+                status.state = "Waiting".to_string();
+                status.next_run = Some(next_utc);
+            })
+            .await;
+            tracing::info!(
+                next_run = %next.to_rfc3339(),
+                timezone = %schedule_config.timezone,
+                pattern = %snapshot_config.pattern(),
+                "automatic snapshot waiting"
+            );
+            tokio::time::sleep(delay).await;
+
+            let started_at = Utc::now();
+            update_schedule_status(&snapshot_config, |status| {
+                status.state = "Running".to_string();
+                status.next_run = None;
+                status.last_started_at = Some(started_at);
+                status.last_error = None;
+            })
+            .await;
+
+            match run_scheduled_snapshot(&state, &snapshot_config, &schedule_config).await {
+                Ok(name) => {
+                    let completed_at = Utc::now();
+                    update_schedule_status(&snapshot_config, |status| {
+                        status.state = "Waiting".to_string();
+                        status.last_completed_at = Some(completed_at);
+                        status.last_result = Some("Completed".to_string());
+                        status.last_error = None;
+                    })
+                    .await;
+                    tracing::info!(snapshot = %name, "automatic snapshot completed");
+                    if let Err(error) =
+                        apply_scheduled_retention(&state, &snapshot_config, &schedule_config).await
+                    {
+                        tracing::warn!(error = %error, "automatic snapshot retention failed");
+                    }
+                }
+                Err(error) => {
+                    let completed_at = Utc::now();
+                    let message = format!("{error:#}");
+                    update_schedule_status(&snapshot_config, |status| {
+                        status.state = "Waiting".to_string();
+                        status.last_completed_at = Some(completed_at);
+                        status.last_result = Some("Failed".to_string());
+                        status.last_error = Some(message.clone());
+                    })
+                    .await;
+                    tracing::error!(error = %error, "automatic snapshot failed");
+                }
+            }
+        }
+    });
+}
+
+async fn update_schedule_status(
+    config: &SnapshotConfig,
+    update: impl FnOnce(&mut ScheduledSnapshotStatus),
+) {
+    if let Some(status) = config.schedule_status.write().await.as_mut() {
+        update(status);
+    }
+}
+
+async fn initialize_schedule_status(state: &AppState, config: &SnapshotConfig) -> Result<()> {
+    let client = stateless_client(state)?;
+    let snapshots = list_snapshots(&client, config).await?;
+    let latest = snapshots
         .iter()
-        .all(|key| actual[*key] == desired[*key])
+        .filter(|snapshot| is_our_scheduled_snapshot(snapshot))
+        .max_by_key(|snapshot| snapshot["start_time_in_millis"].as_i64());
+    if let Some(snapshot) = latest {
+        let started_at = date_time_from_snapshot(snapshot, "start_time_in_millis");
+        let completed_at = date_time_from_snapshot(snapshot, "end_time_in_millis");
+        let result = snapshot["state"].as_str().unwrap_or("Unknown").to_string();
+        update_schedule_status(config, |status| {
+            status.last_started_at = started_at;
+            status.last_completed_at = completed_at;
+            status.last_result = Some(if result == "SUCCESS" {
+                "Completed".to_string()
+            } else {
+                result
+            });
+        })
+        .await;
+    }
+    Ok(())
+}
+
+async fn run_scheduled_snapshot(
+    state: &AppState,
+    config: &SnapshotConfig,
+    schedule: &ScheduledSnapshotConfig,
+) -> Result<String> {
+    let client = stateless_client(state)?;
+    if managed_indices(&client, config).await?.is_empty() {
+        bail!("the managed pattern matches no indices");
+    }
+    let cluster: Value = client.get("/").await?;
+    let name = format!(
+        "elastic-explorer-scheduled-{}",
+        Utc::now().format("%Y%m%d-%H%M%S-%3f")
+    );
+    let body = json!({
+        "indices": config.pattern(),
+        "ignore_unavailable": false,
+        "include_global_state": false,
+        "partial": false,
+        "metadata": {
+            "created_by": "elastic-explorer",
+            "kind": "scheduled",
+            "scope": "all",
+            "note": schedule.note,
+            "index_prefix": config.index_prefix,
+            "source_cluster_name": string_at(&cluster, "cluster_name"),
+            "source_cluster_uuid": string_at(&cluster, "cluster_uuid")
+        }
+    });
+    let _: Value = client
+        .put(
+            &format!(
+                "/_snapshot/{}/{}?wait_for_completion=false",
+                config.repository, name
+            ),
+            body,
+        )
+        .await?;
+
+    loop {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        match get_snapshot(&client, config, &name).await {
+            Ok(snapshot) => match snapshot["state"].as_str().unwrap_or("IN_PROGRESS") {
+                "SUCCESS" => return Ok(name),
+                "FAILED" | "PARTIAL" | "INCOMPATIBLE" => {
+                    bail!(
+                        "snapshot {name} completed with state {}",
+                        snapshot["state"].as_str().unwrap_or("unknown")
+                    )
+                }
+                _ => {}
+            },
+            Err(error) => {
+                tracing::warn!(snapshot = %name, error = %error, "waiting for automatic snapshot status");
+            }
+        }
+    }
+}
+
+async fn apply_scheduled_retention(
+    state: &AppState,
+    config: &SnapshotConfig,
+    schedule: &ScheduledSnapshotConfig,
+) -> Result<()> {
+    let client = stateless_client(state)?;
+    let snapshots = list_snapshots(&client, config).await?;
+    let cutoff = Utc::now() - ChronoDuration::days(i64::from(schedule.max_age_days));
+    for name in scheduled_retention_candidates(&snapshots, schedule.keep_last, cutoff) {
+        let _: Value = client
+            .delete(&format!(
+                "/_snapshot/{}/{}",
+                config.repository,
+                urlencoding::encode(&name)
+            ))
+            .await
+            .with_context(|| format!("failed to delete expired automatic snapshot {name}"))?;
+        tracing::info!(snapshot = %name, "expired automatic snapshot deleted");
+    }
+    Ok(())
+}
+
+fn scheduled_retention_candidates(
+    snapshots: &[Value],
+    keep_last: u32,
+    cutoff: DateTime<Utc>,
+) -> Vec<String> {
+    let mut scheduled: Vec<&Value> = snapshots
+        .iter()
+        .filter(|snapshot| is_our_scheduled_snapshot(snapshot))
+        .filter(|snapshot| snapshot["state"].as_str() != Some("IN_PROGRESS"))
+        .collect();
+    scheduled.sort_by(|a, b| {
+        b["start_time_in_millis"]
+            .as_i64()
+            .cmp(&a["start_time_in_millis"].as_i64())
+    });
+    scheduled
+        .into_iter()
+        .skip(keep_last as usize)
+        .filter(|snapshot| {
+            date_time_from_snapshot(snapshot, "end_time_in_millis")
+                .or_else(|| date_time_from_snapshot(snapshot, "start_time_in_millis"))
+                .is_some_and(|finished| finished < cutoff)
+        })
+        .filter_map(|snapshot| snapshot["snapshot"].as_str().map(ToOwned::to_owned))
+        .collect()
+}
+
+fn is_our_scheduled_snapshot(snapshot: &Value) -> bool {
+    snapshot_kind(snapshot.get("metadata")) == "scheduled"
+        && created_by_us(snapshot.get("metadata"))
+}
+
+fn date_time_from_snapshot(snapshot: &Value, field: &str) -> Option<DateTime<Utc>> {
+    DateTime::from_timestamp_millis(snapshot[field].as_i64()?)
+}
+
+async fn list_snapshots(client: &EsClient, config: &SnapshotConfig) -> Result<Vec<Value>> {
+    let response: Value = client
+        .get(&format!(
+            "/_snapshot/{}/_all?verbose=true&index_details=true",
+            config.repository
+        ))
+        .await?;
+    Ok(response["snapshots"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default())
 }
 
 pub async fn snapshots_page(
@@ -260,7 +541,7 @@ pub struct Overview {
     cluster_uuid: String,
     managed_indices: Vec<Value>,
     snapshots: Vec<Value>,
-    schedule: Option<Value>,
+    schedule: Option<ScheduledSnapshotStatus>,
 }
 
 pub async fn overview(
@@ -276,17 +557,7 @@ pub async fn overview(
         .unwrap_or_default();
     let cluster: Value = client.get("/").await.map_err(api_error)?;
     let managed_indices = managed_indices(&client, config).await.map_err(api_error)?;
-    let response: Value = client
-        .get(&format!(
-            "/_snapshot/{}/_all?verbose=true&index_details=true",
-            config.repository
-        ))
-        .await
-        .map_err(api_error)?;
-    let mut snapshots = response["snapshots"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
+    let mut snapshots = list_snapshots(&client, config).await.map_err(api_error)?;
     snapshots.sort_by(|a, b| {
         b["start_time_in_millis"]
             .as_i64()
@@ -302,14 +573,7 @@ pub async fn overview(
             );
         }
     }
-    let schedule = if config.schedule.is_some() {
-        client
-            .get::<Value>(&format!("/_slm/policy/{POLICY_ID}"))
-            .await
-            .ok()
-    } else {
-        None
-    };
+    let schedule = config.schedule_status.read().await.clone();
     Ok(Json(Overview {
         repository: config.repository.clone(),
         index_prefix: config.index_prefix.clone(),
@@ -321,6 +585,13 @@ pub async fn overview(
         snapshots,
         schedule,
     }))
+}
+
+pub async fn schedule_status(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Option<ScheduledSnapshotStatus>>, (StatusCode, String)> {
+    let config = config(&state).map_err(api_error)?;
+    Ok(Json(config.schedule_status.read().await.clone()))
 }
 
 async fn managed_indices(client: &EsClient, config: &SnapshotConfig) -> Result<Vec<Value>> {
@@ -800,6 +1071,7 @@ fn string_at(value: &Value, key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{TimeZone, Timelike};
 
     #[test]
     fn prefix_is_literal_and_rejects_wildcards() {
@@ -826,19 +1098,45 @@ mod tests {
     }
 
     #[test]
-    fn slm_reconcile_ignores_response_metadata_but_detects_policy_changes() {
-        let desired = json!({
-            "schedule": "1h", "name": "snap", "repository": "repo",
-            "config": {"indices": "tsm-sda*"}, "retention": {"min_count": 1}
-        });
-        let existing = json!({ POLICY_ID: {
-            "version": 7, "modified_date_millis": 42, "policy": desired.clone()
-        }});
-        assert!(slm_policy_matches(Some(&existing), &desired));
-        let changed = json!({
-            "schedule": "2h", "name": "snap", "repository": "repo",
-            "config": {"indices": "tsm-sda*"}, "retention": {"min_count": 1}
-        });
-        assert!(!slm_policy_matches(Some(&existing), &changed));
+    fn application_cron_requires_the_postgres_explorer_format() {
+        assert!(validate_application_cron("0 0 20 * * * *").is_ok());
+        assert!(validate_application_cron("0 0 20 * * ?").is_err());
+    }
+
+    #[test]
+    fn local_schedule_keeps_wall_clock_time_across_dst() {
+        let timezone = chrono_tz::Europe::Prague;
+        let schedule = "0 0 20 * * * *".parse::<cron::Schedule>().unwrap();
+        let start = timezone.with_ymd_and_hms(2026, 10, 24, 19, 0, 0).unwrap();
+        let occurrences: Vec<_> = schedule.after(&start).take(2).collect();
+        assert_eq!(occurrences[0].hour(), 20);
+        assert_eq!(occurrences[1].hour(), 20);
+        assert_eq!(occurrences[0].with_timezone(&Utc).hour(), 18);
+        assert_eq!(occurrences[1].with_timezone(&Utc).hour(), 19);
+    }
+
+    #[test]
+    fn retention_never_deletes_manual_or_kept_automatic_snapshots() {
+        let now = Utc::now();
+        let snapshot = |name: &str, age_days: i64, kind: &str| {
+            let time = now - ChronoDuration::days(age_days);
+            json!({
+                "snapshot": name,
+                "state": "SUCCESS",
+                "start_time_in_millis": time.timestamp_millis(),
+                "end_time_in_millis": time.timestamp_millis(),
+                "metadata": {"created_by": "elastic-explorer", "kind": kind}
+            })
+        };
+        let snapshots = vec![
+            snapshot("automatic-newest", 1, "scheduled"),
+            snapshot("automatic-kept", 2, "scheduled"),
+            snapshot("automatic-expired", 40, "scheduled"),
+            snapshot("manual-old", 60, "manual"),
+        ];
+        assert_eq!(
+            scheduled_retention_candidates(&snapshots, 2, now - ChronoDuration::days(30)),
+            vec!["automatic-expired"]
+        );
     }
 }

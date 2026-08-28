@@ -11,7 +11,7 @@ A modern Elasticsearch cluster explorer written in Rust - a simpler and more int
 - 🔧 **Shards** - Visual shard distribution and status
 - 📝 **Templates** - Index and component template management
 - 🔐 **Secure** - Passwords stored encrypted in the local SQLite database
-- 📷 **Snapshots** - Native Elasticsearch snapshots, SLM scheduling and guarded restore workflows
+- 📷 **Snapshots** - Native Elasticsearch snapshots, timezone-aware scheduling and guarded restore workflows
 
 ## Quick Start
 
@@ -97,18 +97,20 @@ elastic-explorer --stateless \
 
 Equivalent environment variables are `SNAPSHOTS_ENABLED`,
 `SNAPSHOT_REPOSITORY`, and `SNAPSHOT_INDEX_PREFIX`. Optional automatic snapshots
-are reconciled into Elasticsearch SLM at startup:
+use the same seven-field cron format as Postgres Explorer and are evaluated by
+the application in the configured IANA timezone:
 
 ```dotenv
-SCHEDULED_SNAPSHOT_CRON=0 0 20 * * ?
+SCHEDULED_SNAPSHOT_CRON=0 0 20 * * * *
+SCHEDULED_SNAPSHOT_TIMEZONE=Europe/Prague
 SCHEDULED_SNAPSHOT_KEEP_LAST=14
 SCHEDULED_SNAPSHOT_MAX_AGE_DAYS=30
 SCHEDULED_SNAPSHOT_NOTE=Automatic snapshot
 ```
 
-SLM evaluates cron schedules in UTC. It has no policy timezone field, so a
-fixed Europe/Prague wall-clock time requires accounting for daylight-saving
-changes (or using an interval schedule such as `24h`).
+This example runs every day at 20:00 Europe/Prague and automatically follows
+daylight-saving changes. Retention applies only to automatic snapshots created
+by Elastic Explorer; manual snapshots are never removed by the scheduler.
 
 The Snapshots page is Admin-only. Safe restore replaces the source prefix,
 creates no aliases and refuses name collisions. In-place restore is deliberately
