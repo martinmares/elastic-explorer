@@ -360,11 +360,35 @@
     }
     .indices-actions-column {
         width: 1%;
-        min-width: 9.5rem;
+        min-width: 6.75rem;
         white-space: nowrap;
     }
     .indices-actions {
-        flex-wrap: nowrap;
+        display: inline-flex;
+        gap: .125rem;
+        align-items: center;
+        white-space: nowrap;
+    }
+    .indices-index-column {
+        width: 42%;
+    }
+    .index-name-row {
+        display: flex;
+        align-items: center;
+        gap: .25rem;
+        min-width: 0;
+    }
+    .index-name-link {
+        min-width: 0;
+        white-space: nowrap;
+    }
+    .indices-metric-column,
+    .indices-shards-column,
+    .indices-created-column {
+        white-space: nowrap;
+    }
+    .indices-created-column {
+        width: 1%;
     }
     .index-mapping-table-wrap {
         max-height: 60vh;
@@ -1353,7 +1377,15 @@ function formatCreatedDates() {
             el.textContent = raw;
             return;
         }
-        el.textContent = date.toLocaleDateString();
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = String(date.getFullYear()).slice(-2);
+        el.textContent = `${day}. ${month}. ${year}`;
+        el.title = date.toLocaleDateString(undefined, {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+        });
     });
 }
 

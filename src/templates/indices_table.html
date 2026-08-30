@@ -65,7 +65,7 @@
                             {% endif %}
                         </a>
                     </th>
-                    <th>
+                    <th class="indices-index-column">
                         <a href="#" class="table-sort"
                            hx-get="/indices/table?filter={{ d.filter }}&page=1&per_page={{ d.per_page }}&sort_by=index&sort_order={% if d.sort_by == "index" && d.sort_order == "asc" %}desc{% else %}asc{% endif %}&hide_internal={{ d.hide_internal }}"
                            hx-target="#indices-table"
@@ -76,7 +76,7 @@
                             {% endif %}
                         </a>
                     </th>
-                    <th>
+                    <th class="indices-metric-column text-end">
                         <a href="#" class="table-sort"
                            hx-get="/indices/table?filter={{ d.filter }}&page=1&per_page={{ d.per_page }}&sort_by=docs_count&sort_order={% if d.sort_by == "docs_count" && d.sort_order == "asc" %}desc{% else %}asc{% endif %}&hide_internal={{ d.hide_internal }}"
                            hx-target="#indices-table"
@@ -87,7 +87,7 @@
                             {% endif %}
                         </a>
                     </th>
-                    <th>
+                    <th class="indices-metric-column text-end">
                         <a href="#" class="table-sort"
                            hx-get="/indices/table?filter={{ d.filter }}&page=1&per_page={{ d.per_page }}&sort_by=store_size&sort_order={% if d.sort_by == "store_size" && d.sort_order == "asc" %}desc{% else %}asc{% endif %}&hide_internal={{ d.hide_internal }}"
                            hx-target="#indices-table"
@@ -98,8 +98,8 @@
                             {% endif %}
                         </a>
                     </th>
-                    <th>Shards (P/R)</th>
-                    <th>Created</th>
+                    <th class="indices-shards-column">Shards (P/R)</th>
+                    <th class="indices-created-column">Created</th>
                     <th class="indices-actions-column">Actions</th>
                 </tr>
             </thead>
@@ -132,12 +132,12 @@
                         <span class="badge bg-secondary text-white">{{ index.health }}</span>
                         {% endif %}
                     </td>
-                    <td>
-                        <div>
-                            <a href="{% if ctx.base_path == "/" %}/search{% else %}{{ ctx.base_path }}/search{% endif %}?index_pattern={{ index.index }}&query=*" class="text-primary fw-bold">
-                                {{ index.index }}
+                    <td class="indices-index-column">
+                        <div class="index-name-row">
+                            <a href="{% if ctx.base_path == "/" %}/search{% else %}{{ ctx.base_path }}/search{% endif %}?index_pattern={{ index.index }}&query=*" class="text-primary fw-bold index-name-link" title="{{ index.index }}">
+                                {{ index.abbreviated_name() }}
                             </a>
-                            <span class="badge bg-blue-lt ms-1">{{ index.status }}</span>
+                            <span class="badge bg-blue-lt">{{ index.status }}</span>
                         </div>
                         {% if !index.aliases.is_empty() %}
                         <div class="text-muted small mt-1">
@@ -152,36 +152,36 @@
                         </div>
                         {% endif %}
                     </td>
-                    <td>
+                    <td class="indices-metric-column text-end">
                         <span data-index-name="{{ index.index }}" data-metric="docs">
                             {{ index.docs_count_formatted() }}
                         </span>
                     </td>
-                    <td>
+                    <td class="indices-metric-column text-end">
                         <span data-index-name="{{ index.index }}" data-metric="size">
                             {{ index.store_size_formatted() }}
                         </span>
                     </td>
-                    <td>
+                    <td class="indices-shards-column">
                         <span class="badge bg-blue-lt">{{ index.pri }}</span> /
                         <span class="badge bg-cyan-lt">{{ index.rep }}</span>
                     </td>
-                    <td>
+                    <td class="indices-created-column">
                         <span class="index-created" data-created="{{ index.creation_date.as_deref().unwrap_or("") }}"></span>
                     </td>
                     <td class="indices-actions-column">
-                        <div class="btn-list indices-actions">
-                            <button class="btn btn-icon btn-ghost-primary"
+                        <div class="indices-actions">
+                            <button class="btn btn-sm btn-icon btn-ghost-primary"
                                     onclick="openIndexDetail('{{ index.index }}')"
                                     title="Index detail">
                                 <i class="ti ti-info-circle"></i>
                             </button>
-                            <button class="btn btn-icon btn-ghost-secondary"
+                            <button class="btn btn-sm btn-icon btn-ghost-secondary"
                                     onclick="openIndexAliases('{{ index.index }}')"
                                     title="Edit aliases">
                                 <i class="ti ti-tags"></i>
                             </button>
-                            <button class="btn btn-icon btn-ghost-success"
+                            <button class="btn btn-sm btn-icon btn-ghost-success"
                                     onclick="openNewMapping('{{ index.index }}')"
                                     title="New mapping">
                                 <i class="ti ti-file-plus"></i>

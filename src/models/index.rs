@@ -38,6 +38,25 @@ pub struct AliasInfo {
 }
 
 impl IndexInfo {
+    const INDEX_NAME_PREFIX_LENGTH: usize = 42;
+    const INDEX_NAME_SUFFIX_LENGTH: usize = 12;
+
+    pub fn abbreviated_name(&self) -> String {
+        let characters: Vec<_> = self.index.chars().collect();
+        let visible_length = Self::INDEX_NAME_PREFIX_LENGTH + Self::INDEX_NAME_SUFFIX_LENGTH;
+        if characters.len() <= visible_length {
+            return self.index.clone();
+        }
+
+        let prefix: String = characters[..Self::INDEX_NAME_PREFIX_LENGTH]
+            .iter()
+            .collect();
+        let suffix: String = characters[characters.len() - Self::INDEX_NAME_SUFFIX_LENGTH..]
+            .iter()
+            .collect();
+        format!("{prefix}…{suffix}")
+    }
+
     /// Parsuje docs_count jako číslo pro sorting
     pub fn docs_count_num(&self) -> u64 {
         self.docs_count.parse().unwrap_or(0)
